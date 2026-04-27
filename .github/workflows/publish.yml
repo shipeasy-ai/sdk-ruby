@@ -1,0 +1,35 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-rubygems
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # for trusted publishing to RubyGems
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - run: bundle exec rspec
+
+      - name: Build gem
+        run: gem build shipeasy-sdk.gemspec
+
+      # Trusted publishing: configure on rubygems.org under
+      # "Trusted publishers" → GitHub Actions, scoped to this repo +
+      # this workflow file. No long-lived RUBYGEMS_API_KEY needed.
+      - name: Publish to RubyGems
+        uses: rubygems/release-gem@v1
