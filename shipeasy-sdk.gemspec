@@ -3,8 +3,8 @@ require_relative "lib/shipeasy/sdk/version"
 Gem::Specification.new do |spec|
   spec.name        = "shipeasy-sdk"
   spec.version     = Shipeasy::SDK::VERSION
-  spec.summary     = "Shipeasy feature gates, runtime configs, experiments, and metrics — Ruby gem."
-  spec.description = "Server SDK for Shipeasy — polls /sdk/flags and /sdk/experiments, evaluates gates and experiments locally, and forwards exposures + metrics to /collect."
+  spec.summary     = "Shipeasy feature gates, runtime configs, experiments, metrics, and i18n helpers — Ruby gem."
+  spec.description = "Server SDK for Shipeasy. Polls /sdk/flags and /sdk/experiments, evaluates gates and experiments locally, forwards exposures + metrics to /collect, and (when loaded inside Rails) auto-mounts i18n_head_tags / i18n_inline_data / i18n_script_tag / i18n_t view helpers for the Shipeasy string-manager CDN."
   spec.authors     = ["Shipeasy, Inc."]
   spec.email       = ["sdk@shipeasy.ai"]
   spec.homepage    = "https://github.com/shipeasy-ai/sdk-ruby"
