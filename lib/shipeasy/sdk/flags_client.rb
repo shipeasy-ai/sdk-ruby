@@ -3,15 +3,25 @@ require "uri"
 require "json"
 require "thread"
 require_relative "eval"
+require_relative "telemetry"
 
 module Shipeasy
   module SDK
     class FlagsClient
       DEFAULT_BASE_URL = "https://edge.shipeasy.dev"
 
-      def initialize(api_key:, base_url: nil)
+      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil)
         @api_key     = api_key
         @base_url    = (base_url || DEFAULT_BASE_URL).chomp("/")
+        # Per-evaluation usage telemetry. ON by default; pass
+        # disable_telemetry: true to opt out. See telemetry.rb.
+        @telemetry = Telemetry.new(
+          endpoint: telemetry_url || Telemetry::DEFAULT_TELEMETRY_URL,
+          sdk_key: api_key,
+          side: "server",
+          env: env,
+          disabled: disable_telemetry,
+        )
         @flags_blob  = nil
         @exps_blob   = nil
         @flags_etag  = nil
@@ -40,12 +50,14 @@ module Shipeasy
       end
 
       def get_flag(name, user)
+        @telemetry.emit("gate", name)
         gate = @mutex.synchronize { @flags_blob&.dig("gates", name) }
         return false unless gate
         Eval.eval_gate(gate, user.transform_keys(&:to_s))
       end
 
       def get_config(name, decode = nil)
+        @telemetry.emit("config", name)
         entry = @mutex.synchronize { @flags_blob&.dig("configs", name) }
         return nil unless entry
         value = entry["value"]
@@ -53,6 +65,7 @@ module Shipeasy
       end
 
       def get_experiment(name, user, default_params, decode = nil)
+        @telemetry.emit("experiment", name)
         flags_blob, exps_blob = @mutex.synchronize { [@flags_blob, @exps_blob] }
         exp = exps_blob&.dig("experiments", name)
         result = Eval.eval_experiment(exp, flags_blob, exps_blob, user.transform_keys(&:to_s))
