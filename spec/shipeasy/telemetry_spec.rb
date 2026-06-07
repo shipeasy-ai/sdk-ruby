@@ -11,7 +11,9 @@ RSpec.describe Shipeasy::SDK::Telemetry do
 
   # 1) basic telemetry send works for each entity call, hitting the right URL.
   it "fires a beacon with the right feature path for every entity call" do
-    client = Shipeasy::SDK::FlagsClient.new(api_key: "srv", base_url: "https://e.x")
+    client = Shipeasy::SDK::FlagsClient.new(
+      api_key: "srv", base_url: "https://e.x", telemetry_url: "https://e.x"
+    )
     client.get_flag("g", {})
     client.get_config("c")
     client.get_experiment("e", {}, {})
