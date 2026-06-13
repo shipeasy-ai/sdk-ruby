@@ -66,7 +66,12 @@ module Shipeasy
         end
 
         uid = user["user_id"] || user[:user_id] || user["anonymous_id"] || user[:anonymous_id]
-        return false unless uid
+        # No unit id (an unidentified request before any anon id is minted): a
+        # fully-rolled gate is on for everyone, so it can be answered without
+        # bucketing; a fractional rollout genuinely needs a stable unit, so deny
+        # until one exists. Rules above are still checked, so targeting wins.
+        # See experiment-platform/18-identity-bucketing.md.
+        return (gate["rolloutPct"] || gate[:rolloutPct] || 0) >= 10000 unless uid
 
         salt = gate["salt"] || gate[:salt]
         murmur3("#{salt}:#{uid}") % 10000 < (gate["rolloutPct"] || gate[:rolloutPct] || 0)

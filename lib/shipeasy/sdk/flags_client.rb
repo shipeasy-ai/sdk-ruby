@@ -4,6 +4,7 @@ require "json"
 require "thread"
 require_relative "eval"
 require_relative "telemetry"
+require_relative "anon_id"
 
 module Shipeasy
   module SDK
@@ -53,7 +54,7 @@ module Shipeasy
         @telemetry.emit("gate", name)
         gate = @mutex.synchronize { @flags_blob&.dig("gates", name) }
         return false unless gate
-        Eval.eval_gate(gate, user.transform_keys(&:to_s))
+        Eval.eval_gate(gate, with_anon_id(user))
       end
 
       def get_config(name, decode = nil)
@@ -68,7 +69,7 @@ module Shipeasy
         @telemetry.emit("experiment", name)
         flags_blob, exps_blob = @mutex.synchronize { [@flags_blob, @exps_blob] }
         exp = exps_blob&.dig("experiments", name)
-        result = Eval.eval_experiment(exp, flags_blob, exps_blob, user.transform_keys(&:to_s))
+        result = Eval.eval_experiment(exp, flags_blob, exps_blob, with_anon_id(user))
         result.params ||= default_params
 
         if result.in_experiment && decode
@@ -106,6 +107,24 @@ module Shipeasy
       end
 
       private
+
+      # Normalise the user hash to string keys and, when the caller passed no
+      # explicit unit, default anonymous_id to the request's __se_anon_id (set by
+      # RackMiddleware). Lets `get_flag("x", {})` bucket anonymous traffic with
+      # zero per-call wiring. A caller-supplied user_id/anonymous_id always wins.
+      def with_anon_id(user)
+        u = user.transform_keys(&:to_s)
+        has_unit = !blank?(u["user_id"]) || !blank?(u["anonymous_id"])
+        unless has_unit
+          anon = AnonId.current
+          u["anonymous_id"] = anon if anon
+        end
+        u
+      end
+
+      def blank?(v)
+        v.nil? || v == ""
+      end
 
       def start_poll
         @timer = Thread.new do

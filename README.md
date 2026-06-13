@@ -50,6 +50,33 @@ In a Rails view (the railtie auto-mounts these helpers when Rails is loaded):
 <h1><%= i18n_t("hero.title", name: current_user.name) %></h1>
 ```
 
+### Anonymous visitors (zero-config bucketing)
+
+For logged-out traffic you need a *stable* unit so a fractional rollout buckets
+the same on the server and in the browser. In Rails this is automatic: a Railtie
+mounts `Shipeasy::SDK::RackMiddleware`, which mints the shared `__se_anon_id`
+first-party cookie (read + written by every Shipeasy SDK, including the browser)
+for any request without one. Evaluations then default to it with **no per-call
+wiring** — `get_flag` on an anonymous request just works:
+
+```ruby
+# current_user is nil → buckets on the __se_anon_id cookie automatically
+Shipeasy.flags.get_flag("new_checkout", {})
+```
+
+An explicit `user_id` / `anonymous_id` always wins. If you prefer to read the id
+yourself it's also on the Rack env as `request.env["shipeasy.anon_id"]`. The
+cookie is non-`HttpOnly` by design so the browser SDK can bucket identically. A
+request with **no** unit still resolves a fully-rolled (100%) gate as on; only
+fractional gates need the id. Cookie name + format are a cross-SDK contract —
+see `18-identity-bucketing.md`.
+
+For **Sinatra / Hanami / bare Rack** (no Railtie), mount it yourself:
+
+```ruby
+use Shipeasy::SDK::RackMiddleware
+```
+
 ## Quickstart (plain Ruby / Sinatra / Hanami / scripts)
 
 Same pattern, just without `config/initializers`:

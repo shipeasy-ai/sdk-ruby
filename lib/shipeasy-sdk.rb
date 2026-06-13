@@ -3,6 +3,8 @@ require_relative "shipeasy/config"
 require_relative "shipeasy/sdk/murmur3"
 require_relative "shipeasy/sdk/eval"
 require_relative "shipeasy/sdk/flags_client"
+require_relative "shipeasy/sdk/anon_id"
+require_relative "shipeasy/sdk/rack_middleware"
 require_relative "shipeasy/i18n/label_fetcher"
 
 # Rails-only surface. Skipped on plain Ruby so the gem stays usable in
@@ -10,6 +12,8 @@ require_relative "shipeasy/i18n/label_fetcher"
 if defined?(::Rails)
   require_relative "shipeasy/i18n/view_helpers"
   require_relative "shipeasy/i18n/railtie"
+  # Auto-mounts RackMiddleware so anonymous bucketing works with no config.
+  require_relative "shipeasy/sdk/railtie"
 end
 
 module Shipeasy
