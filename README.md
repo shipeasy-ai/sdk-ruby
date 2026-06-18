@@ -128,6 +128,66 @@ at_exit { client.destroy }
 - **Poll interval** — defaults to 30 s; overridden by the
   `X-Poll-Interval` header from the flags endpoint.
 
+## Testing
+
+For unit/integration tests you want a client that does **zero network** and
+returns exactly the values you seed — no api_key, no fetch, no poll thread, no
+telemetry, no metric ingestion. Build one with `FlagsClient.for_testing` and
+seed each entity with the `override_*` setters (Statsig-style local overrides).
+An override always wins over the fetched blob, so the getters answer
+deterministically:
+
+```ruby
+require "shipeasy-sdk"
+
+client = Shipeasy::SDK::FlagsClient.for_testing
+# init / init_once are no-ops here — nothing is ever fetched.
+
+# Flags (boolean)
+client.override_flag("new_checkout", true)
+client.get_flag("new_checkout", { user_id: "u_1" })   # => true
+
+# Configs (any value; an optional decode proc still runs)
+client.override_config("button_color", "blue")
+client.get_config("button_color")                     # => "blue"
+client.override_config("limits", { "max" => 10 })
+client.get_config("limits", ->(v) { v["max"] })       # => 10
+
+# Experiments — returns an in-experiment Eval::ExperimentResult
+client.override_experiment("checkout_cta", "treatment", { label: "Buy now" })
+r = client.get_experiment("checkout_cta", { user_id: "u_1" }, { label: "default" })
+r.in_experiment   # => true
+r.group           # => "treatment"
+r.params          # => { label: "Buy now" }
+
+# track is a no-op (no thread, no network) — assert call counts without stubbing.
+client.track("u_1", "checkout_completed", { revenue: 49.99 })  # => nil
+
+# Reset between examples
+client.clear_overrides
+```
+
+The same `override_flag` / `override_config` / `override_experiment` /
+`clear_overrides` setters also work on a **normal** live client (built with
+`FlagsClient.new(...)`), so you can pin one value in local development while the
+rest comes from the fetched blob.
+
+### Rails singleton
+
+`Shipeasy.flags` is a process-wide singleton that fetches over the network, so
+in tests prefer a `for_testing` client. If a code path reaches through
+`Shipeasy.flags` directly, stub the singleton to the test client in your test
+setup:
+
+```ruby
+# RSpec
+before do
+  test_client = Shipeasy::SDK::FlagsClient.for_testing
+  test_client.override_flag("new_checkout", true)
+  allow(Shipeasy).to receive(:flags).and_return(test_client)
+end
+```
+
 ## Configuration
 
 | Parameter  | Default                   | Description                         |

@@ -11,9 +11,13 @@ module Shipeasy
     class FlagsClient
       DEFAULT_BASE_URL = "https://edge.shipeasy.dev"
 
-      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil)
+      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false)
         @api_key     = api_key
         @base_url    = (base_url || DEFAULT_BASE_URL).chomp("/")
+        # Test mode: no network, ever. init/init_once/track become no-ops and
+        # evaluation answers come purely from local overrides. Built via the
+        # FlagsClient.for_testing factory; see clear_overrides / override_*.
+        @test_mode   = test_mode
         # Per-evaluation usage telemetry. ON by default; pass
         # disable_telemetry: true to opt out. See telemetry.rb.
         @telemetry = Telemetry.new(
@@ -31,18 +35,70 @@ module Shipeasy
         @mutex       = Mutex.new
         @timer       = nil
         @initialized = false
+        # Statsig-style local overrides. Keyed by resource name; an override,
+        # when present, short-circuits the corresponding getter. Usable on any
+        # client (test or live) for deterministic tests / local development.
+        @flag_overrides   = {}
+        @config_overrides = {}
+        @exp_overrides    = {}
+      end
+
+      # Build a no-network, immediately-usable client for tests. Telemetry is
+      # disabled, init/init_once/track are no-ops (never fetch), and no api_key
+      # is required. Seed it with override_flag / override_config /
+      # override_experiment, then call the normal getters.
+      def self.for_testing(env: "prod")
+        new(
+          api_key: "test",
+          env: env,
+          disable_telemetry: true,
+          test_mode: true,
+        )
       end
 
       def init
+        return if @test_mode
         fetch_all
         @initialized = true
         start_poll
       end
 
       def init_once
+        return if @test_mode
         return if @initialized
         fetch_all
         @initialized = true
+      end
+
+      # --- Local overrides -------------------------------------------------
+      # An override wins over the fetched blob in the matching getter. Setters
+      # are mutex-guarded so they're safe to call alongside background polling
+      # on a live client.
+
+      def override_flag(name, value)
+        @mutex.synchronize { @flag_overrides[name.to_s] = (value ? true : false) }
+        self
+      end
+
+      def override_config(name, value)
+        @mutex.synchronize { @config_overrides[name.to_s] = value }
+        self
+      end
+
+      def override_experiment(name, group, params)
+        @mutex.synchronize do
+          @exp_overrides[name.to_s] = { group: group, params: params }
+        end
+        self
+      end
+
+      def clear_overrides
+        @mutex.synchronize do
+          @flag_overrides.clear
+          @config_overrides.clear
+          @exp_overrides.clear
+        end
+        self
       end
 
       def destroy
@@ -51,6 +107,10 @@ module Shipeasy
       end
 
       def get_flag(name, user)
+        key = name.to_s
+        override = @mutex.synchronize { @flag_overrides[key] if @flag_overrides.key?(key) }
+        return override unless override.nil?
+
         @telemetry.emit("gate", name)
         gate = @mutex.synchronize { @flags_blob&.dig("gates", name) }
         return false unless gate
@@ -58,6 +118,14 @@ module Shipeasy
       end
 
       def get_config(name, decode = nil)
+        key = name.to_s
+        has_override, override = @mutex.synchronize do
+          [@config_overrides.key?(key), @config_overrides[key]]
+        end
+        if has_override
+          return decode ? decode.call(override) : override
+        end
+
         @telemetry.emit("config", name)
         entry = @mutex.synchronize { @flags_blob&.dig("configs", name) }
         return nil unless entry
@@ -66,6 +134,18 @@ module Shipeasy
       end
 
       def get_experiment(name, user, default_params, decode = nil)
+        key = name.to_s
+        override = @mutex.synchronize { @exp_overrides[key] }
+        if override
+          params = override[:params]
+          params = decode.call(params) if decode
+          return Eval::ExperimentResult.new(
+            in_experiment: true,
+            group: override[:group],
+            params: params,
+          )
+        end
+
         @telemetry.emit("experiment", name)
         flags_blob, exps_blob = @mutex.synchronize { [@flags_blob, @exps_blob] }
         exp = exps_blob&.dig("experiments", name)
@@ -89,6 +169,8 @@ module Shipeasy
       end
 
       def track(user_id, event_name, props = {})
+        return if @test_mode
+
         payload = JSON.generate({
           events: [{
             type: "metric",

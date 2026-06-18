@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Local-override test utility.** Added `FlagsClient.for_testing`, a factory
+  that returns a no-network, immediately-usable client (telemetry disabled,
+  `init`/`init_once`/`track` are no-ops, no api_key required), plus Statsig-style
+  override setters usable on any client: `override_flag(name, value)`,
+  `override_config(name, value)`, `override_experiment(name, group, params)`, and
+  `clear_overrides`. An override wins over the fetched blob in the matching
+  getter; `override_experiment` makes `get_experiment` return an in-experiment
+  `Eval::ExperimentResult`. Existing behavior is unchanged when no overrides are
+  set and the client is not in test mode.
+
 ## 1.3.0
 
 - **Anonymous bucketing (`__se_anon_id`).** Added `Shipeasy::SDK::RackMiddleware`,
