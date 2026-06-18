@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Default values on `get_flag` / `get_config`.** Both getters now take an
+  optional `default:` keyword returned only when the value cannot be resolved —
+  for `get_flag`, when the client isn't ready or the gate is missing (never when
+  a flag evaluates to `false`); for `get_config`, when the config key is absent.
+  A `decode` proc still runs on a present config value. Backward compatible:
+  `default` is `false` / `nil` respectively, matching the old behavior.
+- **Flag evaluation detail.** Added `get_flag_detail(name, user)` returning a
+  `FlagDetail` struct (`.value`, `.reason`) plus `REASON_*` constants
+  (`CLIENT_NOT_READY`, `FLAG_NOT_FOUND`, `OFF`, `OVERRIDE`, `RULE_MATCH`,
+  `DEFAULT`). The reason is computed at the boundary without touching the
+  canonical evaluator. `get_flag` is re-implemented on top of it. The `gate`
+  usage beacon fires exactly once per call (never on the `OVERRIDE`
+  short-circuit).
+- **Change listeners.** Added `on_change { ... }` (also accepts a callable),
+  returning an unsubscribe proc. Listeners fire after a background poll fetches
+  new flag/config data (HTTP 200, not 304); they never fire in test/offline
+  mode. A raising listener is isolated (warned, not propagated).
+- **Offline file/snapshot data source.** Added `FlagsClient.from_file(path)` and
+  `FlagsClient.from_snapshot(flags:, experiments:)`. Loads a captured snapshot
+  (`{ "flags": …, "experiments": … }`) into a no-network client (reuses the
+  `for_testing` plumbing: telemetry off, `init`/`init_once`/`track` no-ops) that
+  runs the real evaluator against the snapshot. Local `override_*` apply on top.
 - **Local-override test utility.** Added `FlagsClient.for_testing`, a factory
   that returns a no-network, immediately-usable client (telemetry disabled,
   `init`/`init_once`/`track` are no-ops, no api_key required), plus Statsig-style

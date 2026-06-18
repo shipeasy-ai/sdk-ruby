@@ -115,6 +115,84 @@ client.init
 at_exit { client.destroy }
 ```
 
+## Default values
+
+`get_flag` and `get_config` take an optional `default:` returned **only when the
+value cannot be resolved** — never when a flag genuinely evaluates to `false`.
+
+```ruby
+# Flag: default is returned only when the client isn't ready yet (no blob
+# fetched) or the gate doesn't exist. A gate that evaluates to false (disabled,
+# or outside its rollout) returns false, NOT the default.
+Shipeasy.flags.get_flag("new_checkout", user, default: true)
+
+# Config: default is returned when the config key is absent. A decode proc still
+# runs on a present value.
+Shipeasy.flags.get_config("button_color", default: "blue")
+Shipeasy.flags.get_config("limits", ->(v) { v["max"] }, default: 0)
+```
+
+## Evaluation detail
+
+`get_flag_detail(name, user)` returns the boolean **and the reason** it was
+reached, as a `FlagDetail` struct (`.value`, `.reason`). `get_flag` is built on
+top of it. The reason is one of the `REASON_*` constants:
+
+| Reason             | Meaning                                              |
+| ------------------ | --------------------------------------------------- |
+| `OVERRIDE`         | answered by a local `override_flag` (no telemetry)  |
+| `CLIENT_NOT_READY` | no flag blob fetched/loaded yet                     |
+| `FLAG_NOT_FOUND`   | blob present, but this gate isn't in it             |
+| `OFF`              | gate present but disabled or killswitched           |
+| `RULE_MATCH`       | evaluated to `true`                                 |
+| `DEFAULT`          | evaluated to `false` (rollout/rule)                 |
+
+```ruby
+detail = Shipeasy.flags.get_flag_detail("new_checkout", user)
+detail.value   # => true / false
+detail.reason  # => "RULE_MATCH" / "DEFAULT" / "OFF" / ...
+```
+
+The `gate` usage beacon fires exactly once per `get_flag_detail` call (never on
+the `OVERRIDE` short-circuit).
+
+## Change listeners
+
+`on_change` registers a callback fired after a background poll fetches **new**
+flag/config data (HTTP 200, not a 304). It accepts a block or any callable and
+returns an unsubscribe proc. Listeners never fire in test/offline mode (there is
+no poll thread). A raising listener is isolated and logged, not propagated.
+
+```ruby
+unsubscribe = Shipeasy.flags.on_change { reload_local_cache! }
+# ... later
+unsubscribe.call
+```
+
+## Offline snapshot
+
+For CI, air-gapped runs, or reproducing a production decision from a captured
+blob, build a **no-network** client that still runs the real evaluator against a
+snapshot. The snapshot JSON holds the raw response bodies of the two SDK
+endpoints:
+
+```json
+{ "flags": <body of /sdk/flags>, "experiments": <body of /sdk/experiments> }
+```
+
+```ruby
+client = Shipeasy::SDK::FlagsClient.from_file("snapshot.json")
+# or, from already-parsed blobs:
+client = Shipeasy::SDK::FlagsClient.from_snapshot(flags: flags_body, experiments: exps_body)
+
+client.get_flag("new_checkout", user)        # real evaluation, no network
+client.get_experiment("checkout_cta", user, {})
+```
+
+`init` / `init_once` / `track` are no-ops and telemetry is off (it reuses the
+`for_testing` plumbing). Local `override_*` setters still apply on top of the
+snapshot.
+
 ## Evaluation details
 
 - **Gates** — rules matched in order; rollout bucket =

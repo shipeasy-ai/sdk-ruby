@@ -41,6 +41,10 @@ module Shipeasy
         @flag_overrides   = {}
         @config_overrides = {}
         @exp_overrides    = {}
+        # Change listeners — fired after a background poll returns NEW data
+        # (HTTP 200, not 304). Never fired in test/offline mode. Guarded by
+        # @mutex; see on_change / notify_change.
+        @change_listeners = []
       end
 
       # Build a no-network, immediately-usable client for tests. Telemetry is
@@ -54,6 +58,30 @@ module Shipeasy
           disable_telemetry: true,
           test_mode: true,
         )
+      end
+
+      # Build an offline client from a JSON snapshot file. The file holds the
+      # raw response bodies of the two SDK endpoints under "flags" and
+      # "experiments" keys:
+      #
+      #   { "flags": <body of /sdk/flags>, "experiments": <body of /sdk/experiments> }
+      #
+      # The returned client does ZERO network (reuses test_mode plumbing:
+      # init/init_once/track are no-ops, telemetry off) but, unlike a bare
+      # for_testing client, runs the REAL evaluator against the loaded blobs.
+      # Local overrides still apply on top. Handy for CI, air-gapped runs, and
+      # reproducing a production decision from a captured blob.
+      def self.from_file(path, env: "prod")
+        data = JSON.parse(File.read(path))
+        from_snapshot(flags: data["flags"], experiments: data["experiments"], env: env)
+      end
+
+      # Build an offline client directly from already-parsed blobs (same shape
+      # as the /sdk/flags and /sdk/experiments response bodies). See from_file.
+      def self.from_snapshot(flags: nil, experiments: nil, env: "prod")
+        client = for_testing(env: env)
+        client.send(:load_snapshot, flags, experiments)
+        client
       end
 
       def init
@@ -101,23 +129,74 @@ module Shipeasy
         self
       end
 
+      # Register a listener fired after a background poll fetches NEW flag/config
+      # data (HTTP 200, not 304). Accepts either a block or any callable (an
+      # object responding to #call). Returns an unsubscribe proc — call it to
+      # remove the listener. Never fires in test/offline mode (no poll thread).
+      def on_change(callable = nil, &block)
+        listener = callable || block
+        raise ArgumentError, "on_change requires a block or callable" unless listener.respond_to?(:call)
+        @mutex.synchronize { @change_listeners << listener }
+        proc { @mutex.synchronize { @change_listeners.delete(listener) } }
+      end
+
       def destroy
         @timer&.kill
         @timer = nil
       end
 
-      def get_flag(name, user)
+      # Flag evaluation with the reason the value was reached. :value is the
+      # boolean result; :reason is one of the REASON_* constants below.
+      FlagDetail = Struct.new(:value, :reason, keyword_init: true)
+
+      # Reason constants for FlagDetail#reason / get_flag_detail.
+      REASON_CLIENT_NOT_READY = "CLIENT_NOT_READY" # no blob fetched/loaded yet
+      REASON_FLAG_NOT_FOUND   = "FLAG_NOT_FOUND"   # blob present, gate absent
+      REASON_OFF              = "OFF"              # gate present but disabled/killed
+      REASON_OVERRIDE         = "OVERRIDE"         # answered by a local override
+      REASON_RULE_MATCH       = "RULE_MATCH"       # evaluated true
+      REASON_DEFAULT          = "DEFAULT"          # evaluated false (rollout/rule)
+
+      # Evaluate a flag and return why. Telemetry ("gate" beacon) is emitted
+      # exactly once here (steps 2–5), never on the OVERRIDE short-circuit.
+      def get_flag_detail(name, user)
         key = name.to_s
+
+        # 1. Override short-circuits before any telemetry (mirrors get_config).
         override = @mutex.synchronize { @flag_overrides[key] if @flag_overrides.key?(key) }
-        return override unless override.nil?
+        return FlagDetail.new(value: override, reason: REASON_OVERRIDE) unless override.nil?
 
         @telemetry.emit("gate", name)
-        gate = @mutex.synchronize { @flags_blob&.dig("gates", name) }
-        return false unless gate
-        Eval.eval_gate(gate, with_anon_id(user))
+
+        flags_blob, gate = @mutex.synchronize { [@flags_blob, @flags_blob&.dig("gates", name)] }
+
+        # 2. Not initialized — no blob fetched or loaded yet.
+        return FlagDetail.new(value: false, reason: REASON_CLIENT_NOT_READY) if flags_blob.nil?
+
+        # 3. Blob present but this gate isn't in it.
+        return FlagDetail.new(value: false, reason: REASON_FLAG_NOT_FOUND) unless gate
+
+        # 4. Gate present but disabled (or killswitched) — eval_gate would also
+        #    return false here, but the reason is OFF, not a rollout DEFAULT.
+        if Eval.enabled?(gate["killswitch"]) || !Eval.enabled?(gate["enabled"])
+          return FlagDetail.new(value: false, reason: REASON_OFF)
+        end
+
+        # 5. Run the canonical evaluator; reason follows the boolean result.
+        result = Eval.eval_gate(gate, with_anon_id(user))
+        FlagDetail.new(value: result, reason: result ? REASON_RULE_MATCH : REASON_DEFAULT)
       end
 
-      def get_config(name, decode = nil)
+      def get_flag(name, user, default: false)
+        detail = get_flag_detail(name, user)
+        if detail.reason == REASON_CLIENT_NOT_READY || detail.reason == REASON_FLAG_NOT_FOUND
+          default
+        else
+          detail.value
+        end
+      end
+
+      def get_config(name, decode = nil, default: nil)
         key = name.to_s
         has_override, override = @mutex.synchronize do
           [@config_overrides.key?(key), @config_overrides[key]]
@@ -128,7 +207,7 @@ module Shipeasy
 
         @telemetry.emit("config", name)
         entry = @mutex.synchronize { @flags_blob&.dig("configs", name) }
-        return nil unless entry
+        return default unless entry
         value = entry["value"]
         decode ? decode.call(value) : value
       end
@@ -190,6 +269,32 @@ module Shipeasy
 
       private
 
+      # Load a parsed snapshot into the local blobs and mark the client ready,
+      # without any network. Used by from_snapshot / from_file on a test_mode
+      # client so the real evaluator runs against captured data.
+      def load_snapshot(flags, experiments)
+        @mutex.synchronize do
+          @flags_blob = flags
+          @exps_blob  = experiments
+        end
+        @initialized = true
+        self
+      end
+
+      # Fire each change listener, snapshotting the array under the mutex so a
+      # listener that unsubscribes mid-callback doesn't mutate the list we're
+      # iterating. Listener errors are isolated (warn, never propagate).
+      def notify_change
+        listeners = @mutex.synchronize { @change_listeners.dup }
+        listeners.each do |listener|
+          begin
+            listener.call
+          rescue => e
+            warn "[shipeasy] on_change listener raised: #{e.message}"
+          end
+        end
+      end
+
       # Normalise the user hash to string keys and, when the caller passed no
       # explicit unit, default anonymous_id to the request's __se_anon_id (set by
       # RackMiddleware). Lets `get_flag("x", {})` bucket anonymous traffic with
@@ -244,6 +349,8 @@ module Shipeasy
           @flags_etag = etag if etag
           @flags_blob = blob
         end
+        # New data arrived (200, not the 304 returned above) — notify listeners.
+        notify_change
         interval
       end
 
