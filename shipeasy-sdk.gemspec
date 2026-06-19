@@ -31,4 +31,10 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rspec",   "~> 3.13"
   spec.add_development_dependency "rake",    "~> 13.0"
   spec.add_development_dependency "rubocop", "~> 1.71"
+  # Optional integration: `Shipeasy::OpenFeature::Provider` adapts FlagsClient to
+  # the CNCF OpenFeature API. NOT a runtime dependency — the provider file
+  # (lib/shipeasy/sdk/openfeature.rb) requires "open_feature/sdk" lazily, so apps
+  # that don't use OpenFeature never load it. Apps that do should add
+  # `gem "openfeature-sdk"` to their own Gemfile. (Requires Ruby >= 3.4.)
+  spec.add_development_dependency "openfeature-sdk", "~> 0.6"
 end

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **OpenFeature provider.** Added `Shipeasy::OpenFeature::Provider`, an adapter
+  that plugs `FlagsClient` into the CNCF OpenFeature Ruby API (`openfeature-sdk`
+  gem, module `OpenFeature::SDK::Provider`). Metadata name is `"shipeasy"`.
+  `fetch_boolean_value` maps onto a gate via `get_flag_detail` — building the
+  user from the evaluation context (`targeting_key` → `user_id`, other fields →
+  user attributes) — and translates the Shipeasy reason to OpenFeature:
+  `RULE_MATCH → TARGETING_MATCH`, `DEFAULT → DEFAULT`, `OFF → DISABLED`,
+  `OVERRIDE → STATIC`, `FLAG_NOT_FOUND → ERROR`/`FLAG_NOT_FOUND`,
+  `CLIENT_NOT_READY → ERROR`/`PROVIDER_NOT_READY`, returning the default on any
+  error reason. `fetch_string/number/integer/float/object_value` route to
+  `get_config`: absent key → default with `DEFAULT`; present but wrong type →
+  default with `TYPE_MISMATCH`; present and well-typed → value with
+  `TARGETING_MATCH`. `init`/`shutdown` and `track` are bridged to the client.
+  The provider lives in `lib/shipeasy/sdk/openfeature.rb` and is **not** loaded
+  by the main entrypoint — it `require`s `open_feature/sdk` lazily, so
+  `openfeature-sdk` stays an optional (development-only) dependency that apps add
+  to their own Gemfile. (`openfeature-sdk` requires Ruby >= 3.4.)
+
 ## 1.5.0 (2026-06-18)
 
 - **Private attributes.** `FlagsClient.new(..., private_attributes: [...])` takes
