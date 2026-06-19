@@ -2,6 +2,28 @@
 
 ## 1.5.0 (2026-06-18)
 
+- **Private attributes.** `FlagsClient.new(..., private_attributes: [...])` takes
+  an array of attribute names (LD/Statsig `privateAttributes`) that are usable for
+  local targeting but stripped from every outbound `track()` properties bag before
+  it is POSTed to `/collect`. String and symbol keys are both matched. When the
+  strip empties the bag, the `properties` key is omitted entirely. No
+  `private_attributes` = previous behavior.
+- **Manual exposure (server).** Added `log_exposure(user_or_user_id,
+  experiment_name)`. The server is stateless and never auto-logs exposures, so
+  call this when you actually present a treatment. It re-evaluates the experiment
+  (a bare user_id string is wrapped as `{ "user_id" => id }`) and, if the user is
+  enrolled, POSTs one `{type:"exposure", experiment:, group:, user_id:, ts:}`
+  event to `/collect`. No-op in test mode or when the user isn't enrolled.
+- **Sticky bucketing (server).** New `sticky_store:` option taking a duck-typed
+  store — `get(unit) -> { exp => {"g"=>group, "s"=>salt8} }` or nil, and
+  `set(unit, exp, entry)`. Threaded into experiment eval after the holdout, before
+  allocation: when a stored entry for `(unit, exp)` has `s == salt[0,8]`, the
+  allocation gate is skipped and the stored group is returned without a re-pick
+  (so shrinking allocation keeps an enrolled unit in). A salt-prefix mismatch or a
+  vanished stored group re-buckets and overwrites; a fresh pick is persisted via
+  `set`. `unit` is the `pick_identifier`-resolved id. A built-in
+  `Shipeasy::SDK::InMemoryStickyStore` (optionally seeded) is provided. Absent
+  store ⇒ deterministic behavior (fully backward compatible).
 - **Per-experiment `bucketBy`.** Experiment evaluation now honors an optional
   `bucketBy` attribute (read from the experiment's JSON `bucketBy` field). When
   set and the user carries that attribute as a non-empty string (or any number,

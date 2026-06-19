@@ -5,15 +5,25 @@ require "thread"
 require_relative "eval"
 require_relative "telemetry"
 require_relative "anon_id"
+require_relative "sticky_store"
 
 module Shipeasy
   module SDK
     class FlagsClient
       DEFAULT_BASE_URL = "https://edge.shipeasy.dev"
 
-      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false)
+      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil)
         @api_key     = api_key
         @base_url    = (base_url || DEFAULT_BASE_URL).chomp("/")
+        # Attribute names usable for targeting but stripped from every outbound
+        # /collect payload (LD/Statsig privateAttributes). The server evaluates
+        # locally so private attrs never leave for evaluation; the only egress is
+        # track(), where the listed keys are dropped from the props bag.
+        @private_attributes = (private_attributes || []).map(&:to_s)
+        # Pluggable sticky-bucketing store (doc 20 §2). Absent ⇒ deterministic.
+        # Threaded into get_experiment so an enrolled unit locks to its first
+        # assigned variant. Built-in: InMemoryStickyStore.
+        @sticky_store = sticky_store
         # Test mode: no network, ever. init/init_once/track become no-ops and
         # evaluation answers come purely from local overrides. Built via the
         # FlagsClient.for_testing factory; see clear_overrides / override_*.
@@ -228,7 +238,10 @@ module Shipeasy
         @telemetry.emit("experiment", name)
         flags_blob, exps_blob = @mutex.synchronize { [@flags_blob, @exps_blob] }
         exp = exps_blob&.dig("experiments", name)
-        result = Eval.eval_experiment(exp, flags_blob, exps_blob, with_anon_id(user))
+        result = Eval.eval_experiment(
+          exp, flags_blob, exps_blob, with_anon_id(user),
+          exp_name: name.to_s, sticky_store: @sticky_store,
+        )
         result.params ||= default_params
 
         if result.in_experiment && decode
@@ -250,13 +263,15 @@ module Shipeasy
       def track(user_id, event_name, props = {})
         return if @test_mode
 
+        safe_props = strip_private(props)
+
         payload = JSON.generate({
           events: [{
             type: "metric",
             event_name: event_name,
             user_id: user_id.to_s,
             ts: (Time.now.to_f * 1000).to_i,
-            **(props.empty? ? {} : { properties: props }),
+            **(safe_props.empty? ? {} : { properties: safe_props }),
           }],
         })
 
@@ -267,7 +282,45 @@ module Shipeasy
         end
       end
 
+      # Emit an exposure event for an experiment at the server-side decision
+      # point (parity with the browser's auto-exposure). The server is stateless
+      # and never auto-logs, so call this when you actually present the
+      # treatment. Re-evaluates the experiment for the user (a bare user_id
+      # string is wrapped as { "user_id" => id }); if enrolled, POSTs a single
+      # exposure to /collect. No-op in test mode or when the user isn't enrolled.
+      def log_exposure(user_or_user_id, experiment_name)
+        return if @test_mode
+
+        user = user_or_user_id.is_a?(Hash) ? user_or_user_id : { "user_id" => user_or_user_id.to_s }
+        result = get_experiment(experiment_name, user, {})
+        return unless result.in_experiment
+
+        u = user.transform_keys(&:to_s)
+        payload = JSON.generate({
+          events: [{
+            type: "exposure",
+            experiment: experiment_name.to_s,
+            group: result.group,
+            user_id: (u["user_id"] || u["anonymous_id"]).to_s,
+            ts: (Time.now.to_f * 1000).to_i,
+          }],
+        })
+
+        Thread.new do
+          post("/collect", payload)
+        rescue => e
+          warn "[shipeasy] log_exposure failed: #{e.message}"
+        end
+      end
+
       private
+
+      # Drop caller-marked private attributes from an outbound props bag. Handles
+      # both string and symbol keys against the stringified private list.
+      def strip_private(props)
+        return props if props.nil? || props.empty? || @private_attributes.empty?
+        props.reject { |k, _| @private_attributes.include?(k.to_s) }
+      end
 
       # Load a parsed snapshot into the local blobs and mark the client ready,
       # without any network. Used by from_snapshot / from_file on a test_mode

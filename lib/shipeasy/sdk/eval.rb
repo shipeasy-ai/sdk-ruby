@@ -92,7 +92,14 @@ module Shipeasy
 
       ExperimentResult = Struct.new(:in_experiment, :group, :params, keyword_init: true)
 
-      def self.eval_experiment(exp, flags_blob, exps_blob, user)
+      # exp_name + sticky_store are optional so existing callers stay deterministic.
+      # When a sticky_store is passed, an enrolled unit whose stored salt prefix
+      # still matches skips the allocation gate (so a shrinking allocation keeps
+      # it in) and returns the stored group without re-running the pick. A fresh
+      # pick is persisted via store.set; a salt mismatch / missing stored group
+      # falls through to re-bucket + overwrite. Mirrors the TS reference
+      # (doc 20 §2). exp_name is the key under which the entry is stored.
+      def self.eval_experiment(exp, flags_blob, exps_blob, user, exp_name: nil, sticky_store: nil)
         not_in = ExperimentResult.new(in_experiment: false, group: "control", params: nil)
 
         return not_in unless exp && exp["status"] == "running"
@@ -117,14 +124,28 @@ module Shipeasy
 
         salt          = exp["salt"]
         allocation_pct = exp["allocationPct"] || 0
+        groups = exp["groups"] || []
+        salt8 = (salt || "")[0, 8]
+
+        # Sticky short-circuit: an enrolled unit whose stored salt prefix still
+        # matches skips allocation and returns the stored group. If the stored
+        # group no longer exists, fall through to re-bucket + overwrite.
+        if sticky_store && exp_name
+          entry = (sticky_store.get(uid) || {})[exp_name]
+          if entry && entry["s"] == salt8
+            g = groups.find { |x| x["name"] == entry["g"] }
+            return ExperimentResult.new(in_experiment: true, group: g["name"], params: g["params"]) if g
+          end
+        end
+
         return not_in if murmur3("#{salt}:alloc:#{uid}") % 10000 >= allocation_pct
 
         group_hash = murmur3("#{salt}:group:#{uid}") % 10000
         cumulative = 0
-        groups = exp["groups"] || []
         groups.each_with_index do |g, i|
           cumulative += g["weight"]
           if group_hash < cumulative || i == groups.length - 1
+            sticky_store.set(uid, exp_name, { "g" => g["name"], "s" => salt8 }) if sticky_store && exp_name
             return ExperimentResult.new(in_experiment: true, group: g["name"], params: g["params"])
           end
         end
