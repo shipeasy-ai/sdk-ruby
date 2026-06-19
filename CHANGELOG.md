@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 (2026-06-18)
 
 - **Default values on `get_flag` / `get_config`.** Both getters now take an
   optional `default:` keyword returned only when the value cannot be resolved —
