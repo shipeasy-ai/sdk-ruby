@@ -57,6 +57,19 @@ module Shipeasy
         end
       end
 
+      # Pick the bucketing identifier. When bucket_by is set and the user
+      # carries that attribute as a non-empty string (or any number, stringified),
+      # bucket on it — so a whole company/org lands on one variant. Otherwise fall
+      # back to user_id, then anonymous_id. Mirrors core's pickIdentifier.
+      def self.pick_identifier(user, bucket_by)
+        if bucket_by && !bucket_by.to_s.empty?
+          v = user[bucket_by] || user[bucket_by.to_sym]
+          return v if v.is_a?(String) && !v.empty?
+          return v.to_s if v.is_a?(Numeric)
+        end
+        user["user_id"] || user[:user_id] || user["anonymous_id"] || user[:anonymous_id]
+      end
+
       def self.eval_gate(gate, user)
         return false if enabled?(gate["killswitch"])
         return false unless enabled?(gate["enabled"])
@@ -90,7 +103,8 @@ module Shipeasy
           return not_in unless gate && eval_gate(gate, user)
         end
 
-        uid = user["user_id"] || user[:user_id] || user["anonymous_id"] || user[:anonymous_id]
+        bucket_by = exp["bucketBy"] || exp[:bucketBy]
+        uid = pick_identifier(user, bucket_by)
         return not_in unless uid
 
         universe_name = exp["universe"]

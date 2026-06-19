@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0 (2026-06-18)
+
+- **Per-experiment `bucketBy`.** Experiment evaluation now honors an optional
+  `bucketBy` attribute (read from the experiment's JSON `bucketBy` field). When
+  set and the user carries that attribute as a non-empty string (or any number,
+  stringified), all three experiment hashes — holdout, allocation, and group —
+  bucket on that value instead of the unit id, so a whole company/org lands on
+  one variant. When the attribute is absent it falls back to `user_id`, then
+  `anonymous_id` (matching gate bucketing). No `bucketBy` = previous behavior.
+  Mirrors the canonical `packages/core` `pickIdentifier`.
+
 ## 1.4.0 (2026-06-18)
 
 - **Default values on `get_flag` / `get_config`.** Both getters now take an
