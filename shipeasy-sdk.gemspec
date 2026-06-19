@@ -35,6 +35,13 @@ Gem::Specification.new do |spec|
   # the CNCF OpenFeature API. NOT a runtime dependency — the provider file
   # (lib/shipeasy/sdk/openfeature.rb) requires "open_feature/sdk" lazily, so apps
   # that don't use OpenFeature never load it. Apps that do should add
-  # `gem "openfeature-sdk"` to their own Gemfile. (Requires Ruby >= 3.4.)
-  spec.add_development_dependency "openfeature-sdk", "~> 0.6"
+  # `gem "openfeature-sdk"` to their own Gemfile.
+  #
+  # The dev dependency is guarded on Ruby >= 3.4 because openfeature-sdk itself
+  # requires it; the gem (and CI) still support Ruby >= 3.0, where bundler must
+  # not be forced to resolve a gem it can't install. The provider spec skips when
+  # the gem isn't loadable, so older Rubies stay green.
+  if Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.4")
+    spec.add_development_dependency "openfeature-sdk", "~> 0.6"
+  end
 end
