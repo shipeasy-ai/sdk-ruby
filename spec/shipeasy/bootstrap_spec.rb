@@ -36,7 +36,9 @@ RSpec.describe "SSR bootstrap script tags" do
   end
 
   it "omits data-anon-id when no anon id is given" do
-    tag = client.bootstrap_script_tag("user_id" => "u1")
+    # Braces required: a braceless hash before keyword args is parsed as kwargs
+    # on Ruby 3.0+, starving the positional `user`.
+    tag = client.bootstrap_script_tag({ "user_id" => "u1" })
     expect(tag).not_to include("data-anon-id")
   end
 
