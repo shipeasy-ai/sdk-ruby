@@ -6,6 +6,7 @@ require_relative "eval"
 require_relative "telemetry"
 require_relative "anon_id"
 require_relative "sticky_store"
+require_relative "see"
 
 module Shipeasy
   module SDK
@@ -15,6 +16,9 @@ module Shipeasy
       def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil)
         @api_key     = api_key
         @base_url    = (base_url || DEFAULT_BASE_URL).chomp("/")
+        # Read-env tag. Used by telemetry below and stamped onto see() error
+        # events so reports are attributable to an environment.
+        @env         = env
         # Attribute names usable for targeting but stripped from every outbound
         # /collect payload (LD/Statsig privateAttributes). The server evaluates
         # locally so private attrs never leave for evaluation; the only egress is
@@ -55,6 +59,13 @@ module Shipeasy
         # (HTTP 200, not 304). Never fired in test/offline mode. Guarded by
         # @mutex; see on_change / notify_change.
         @change_listeners = []
+        # see() structured error reporting. Per-process spam guard, bound here so
+        # repeated reports of the same issue collapse to one send. See see.rb.
+        @see_limiter = See::Limiter.new
+        # Register as the default client backing the module-level Shipeasy::SDK
+        # .see/.see_violation funcs (last constructed wins — the server-SDK
+        # analog of TS's shipeasy({key}) configure call).
+        Shipeasy::SDK.set_default_client(self)
       end
 
       # Build a no-network, immediately-usable client for tests. Telemetry is
@@ -313,7 +324,57 @@ module Shipeasy
         end
       end
 
+      # ---- see() structured error reporting -------------------------------
+
+      # Report a caught exception (or thrown non-exception). Fire-and-forget;
+      # never blocks or throws into the request path. Terminate with
+      # `.to(outcome)`:
+      #
+      #   client.see(e).causes_the("checkout").to("use cached prices")
+      def see(problem)
+        See::Chain.new(problem, method(:dispatch_see))
+      end
+
+      # Report a non-exception problem. The name is a stable fingerprint key —
+      # put variable data in `.extras`, never in the name.
+      def see_violation(name)
+        See::Chain.new(See::Violation.new(name), method(:dispatch_see))
+      end
+      alias seeViolation see_violation
+
+      # Mark an exception as expected control flow — reports nothing. Returns a
+      # `.because(reason)` tail (with optional `.extras` for local debug only).
+      def control_flow_exception(err)
+        See::ControlFlowChain.new(err)
+      end
+      alias controlFlowException control_flow_exception
+
       private
+
+      # Build the wire event and fire-and-forget POST it to /collect. No-op in
+      # test mode (mirrors track). Spam-guarded. Never raises into caller code.
+      def dispatch_see(built)
+        return if @test_mode
+
+        ev = See.build_event(
+          built.problem,
+          built.subject,
+          built.outcome,
+          strip_private(built.extras),
+          sdk_version: Shipeasy::SDK::VERSION,
+          env: @env,
+        )
+        return unless @see_limiter.should_send?(ev)
+
+        payload = JSON.generate({ events: [ev] })
+        Thread.new do
+          post("/collect", payload)
+        rescue => e
+          warn "[shipeasy] see() send failed: #{e.message}"
+        end
+      rescue => e
+        warn "[shipeasy] see() failed: #{e.message}"
+      end
 
       # Drop caller-marked private attributes from an outbound props bag. Handles
       # both string and symbol keys against the stringified private list.

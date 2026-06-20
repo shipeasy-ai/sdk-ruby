@@ -20,6 +20,40 @@
   `openfeature-sdk` stays an optional (development-only) dependency that apps add
   to their own Gemfile. (`openfeature-sdk` requires Ruby >= 3.4.)
 
+## 1.6.0
+
+- **`see()` structured error reporting.** New error-reporting grammar mirroring
+  `@shipeasy/sdk`. Every handled exception documents its product *consequence*,
+  not just its stack. Available both as instance methods on `FlagsClient` and as
+  a module-level facade backed by the last-constructed client:
+
+  ```ruby
+  begin
+    charge_card(order)
+  rescue => e
+    Shipeasy::SDK.see(e).causes_the("checkout").extras(order_id: id).to("use cached prices")
+  end
+
+  # non-exception problem (stable fingerprint name, variable data in extras):
+  client.see_violation("large query").causes_the("search results").to("be trimmed")
+
+  # expected control flow — marks the exception and reports NOTHING:
+  Shipeasy::SDK.control_flow_exception(e).because("because it wasn't an encoded Foo")
+  ```
+
+  `.to(outcome)` is the terminal: it builds the wire event and fire-and-forgets a
+  POST to `/collect` (in a background `Thread`, exactly like `track`), and is
+  idempotent. `causes_the` and `extras` are chainable setters callable in any
+  order before `.to`; `extras` merges on repeat. The event is the cross-SDK
+  shape `{ type: "error", kind, error_type, message, stack?, subject, outcome,
+  extras?, side: "server", env?, sdk_version, ts }`. Extras are sanitized (≤20
+  keys, ≤200-char string values, nil dropped, only String/Numeric/boolean kept)
+  and the client's `private_attributes` are stripped. A per-process spam limiter
+  (30s dedup, 25-send cap) bounds network chatter. No-op in test/offline mode
+  (`for_testing`/`from_file`/`from_snapshot`); a module-level `see()` before any
+  client warns and no-ops instead of raising. `sdk_version` is now sent on these
+  events. The client also stores its `env` so reports are environment-tagged.
+
 ## 1.5.0 (2026-06-18)
 
 - **Private attributes.** `FlagsClient.new(..., private_attributes: [...])` takes
