@@ -115,6 +115,31 @@ client.init
 at_exit { client.destroy }
 ```
 
+## Server-side rendering (SSR)
+
+Emit the request's evaluated flags as a declarative `<script>` tag so the
+browser SDK has them on first paint. `bootstrap_script_tag` carries the payload
+in `data-*` attributes (**no key**); the static `se-bootstrap.js` loader
+hydrates `window.__SE_BOOTSTRAP` and writes the `__se_anon_id` cookie so the
+browser buckets identically to the server.
+
+```ruby
+user = { "user_id" => "u_123" }
+
+# Two tags for the document <head>. The PUBLIC client key (not the server
+# key) goes on the i18n loader tag.
+head = client.bootstrap_script_tag(user, anon_id: anon_id) +
+       client.i18n_script_tag(client_key, profile: "en:prod")
+
+# …or get the raw payload ({ "flags", "configs", "experiments", "killswitches" }):
+boot = client.evaluate(user)
+```
+
+`bootstrap_script_tag` also accepts `i18n_profile:` and `base_url:` (defaults to
+`https://cdn.shipeasy.ai`). In **Rails**, the existing
+`Shipeasy::I18n::ViewHelpers#i18n_script_tag` view helper still renders the i18n
+loader tag from your app config.
+
 ## Default values
 
 `get_flag` and `get_config` take an optional `default:` returned **only when the
