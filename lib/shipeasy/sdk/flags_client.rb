@@ -2,6 +2,7 @@ require "net/http"
 require "uri"
 require "json"
 require "thread"
+require "cgi"
 require_relative "eval"
 require_relative "telemetry"
 require_relative "anon_id"
@@ -12,6 +13,9 @@ module Shipeasy
   module SDK
     class FlagsClient
       DEFAULT_BASE_URL = "https://edge.shipeasy.dev"
+      # CDN origin serving the static loader scripts (/sdk/bootstrap.js,
+      # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
+      DEFAULT_CDN_BASE = "https://cdn.shipeasy.ai"
 
       def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil)
         @api_key     = api_key
@@ -271,6 +275,71 @@ module Shipeasy
         result
       end
 
+      # Batch-evaluate every loaded gate, config and experiment for +user+ into
+      # a bootstrap payload (+{ "flags" => ..., "configs" => ..., "experiments"
+      # => ..., "killswitches" => ... }+) keyed to match the browser SDK's
+      # window.__SE_BOOTSTRAP shape. Local overrides win. Killswitches are folded
+      # into per-gate evaluation, so the standalone +killswitches+ map is empty
+      # for this SDK. No telemetry (a batch evaluate is not a per-flag exposure).
+      def evaluate(user)
+        u = with_anon_id(user)
+        flags_blob, exps_blob, flag_ov, config_ov, exp_ov, sticky = @mutex.synchronize do
+          [@flags_blob, @exps_blob, @flag_overrides.dup, @config_overrides.dup,
+           @exp_overrides.dup, @sticky_store]
+        end
+
+        flags = {}
+        (flags_blob&.dig("gates") || {}).each do |name, gate|
+          flags[name] = flag_ov.key?(name) ? flag_ov[name] : Eval.eval_gate(gate, u)
+        end
+
+        configs = {}
+        (flags_blob&.dig("configs") || {}).each do |name, entry|
+          configs[name] = config_ov.key?(name) ? config_ov[name] : entry["value"]
+        end
+
+        experiments = {}
+        (exps_blob&.dig("experiments") || {}).each do |name, exp|
+          if exp_ov.key?(name)
+            ov = exp_ov[name]
+            experiments[name] = { "inExperiment" => true, "group" => ov[:group], "params" => ov[:params] }
+            next
+          end
+          r = Eval.eval_experiment(exp, flags_blob, exps_blob, u, exp_name: name, sticky_store: sticky)
+          experiments[name] = { "inExperiment" => r.in_experiment, "group" => r.group, "params" => r.params }
+        end
+
+        { "flags" => flags, "configs" => configs, "experiments" => experiments, "killswitches" => {} }
+      end
+
+      # Return the cross-platform SSR bootstrap <script> tag for a request:
+      # se-bootstrap.js reads its data-* attributes and hydrates
+      # window.__SE_BOOTSTRAP (and writes the anon cookie). No key is embedded.
+      def bootstrap_script_tag(user, anon_id: nil, i18n_profile: "en:prod", base_url: nil)
+        payload = evaluate(user)
+        base = cdn_base(base_url)
+        attrs = [
+          "data-se-bootstrap",
+          attr("data-flags", JSON.generate(payload["flags"])),
+          attr("data-configs", JSON.generate(payload["configs"])),
+          attr("data-experiments", JSON.generate(payload["experiments"])),
+          attr("data-killswitches", JSON.generate(payload["killswitches"])),
+          attr("data-i18n-profile", i18n_profile || "en:prod"),
+          attr("data-api-url", base),
+        ]
+        attrs << attr("data-anon-id", anon_id) if anon_id && !anon_id.empty?
+        %(<script src="#{CGI.escapeHTML("#{base}/sdk/bootstrap.js")}" #{attrs.join(' ')}></script>)
+      end
+
+      # Return the i18n loader <script> tag (framework-agnostic; the Rails view
+      # helper Shipeasy::I18n::ViewHelpers#i18n_script_tag is separate). The
+      # loader fetches translations for the profile using the PUBLIC client key.
+      def i18n_script_tag(client_key, profile: "en:prod", base_url: nil)
+        base = cdn_base(base_url)
+        %(<script src="#{CGI.escapeHTML("#{base}/sdk/i18n/loader.js")}" ) +
+          %(#{attr('data-key', client_key)} #{attr('data-profile', profile || 'en:prod')}></script>)
+      end
+
       def track(user_id, event_name, props = {})
         return if @test_mode
 
@@ -425,6 +494,14 @@ module Shipeasy
 
       def blank?(v)
         v.nil? || v == ""
+      end
+
+      def cdn_base(override)
+        (override && !override.empty? ? override : DEFAULT_CDN_BASE).chomp("/")
+      end
+
+      def attr(name, value)
+        %(#{name}="#{CGI.escapeHTML(value.to_s)}")
       end
 
       def start_poll
