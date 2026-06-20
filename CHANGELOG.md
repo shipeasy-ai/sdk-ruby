@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.7.0 (2026-06-20)
+
+- **SSR bootstrap script-tag helpers.** New `FlagsClient#evaluate(user)`
+  batch-evaluate (every gate/config/experiment → a `{ "flags", "configs",
+  "experiments", "killswitches" }` payload) plus `bootstrap_script_tag` and a
+  framework-agnostic `i18n_script_tag`, which emit the cross-platform declarative
+  `<script>` tags carrying the SSR payload as `data-*` attributes. The static
+  `se-bootstrap.js` loader hydrates `window.__SE_BOOTSTRAP` and writes the
+  `__se_anon_id` cookie so the browser buckets identically to the server. **No
+  SDK key is embedded** in the bootstrap tag. The Rails
+  `Shipeasy::I18n::ViewHelpers#i18n_script_tag` view helper is unchanged.
 
 - **OpenFeature provider.** Added `Shipeasy::OpenFeature::Provider`, an adapter
   that plugs `FlagsClient` into the CNCF OpenFeature Ruby API (`openfeature-sdk`
