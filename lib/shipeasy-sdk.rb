@@ -3,7 +3,8 @@ require_relative "shipeasy/config"
 require_relative "shipeasy/sdk/murmur3"
 require_relative "shipeasy/sdk/eval"
 require_relative "shipeasy/sdk/sticky_store"
-require_relative "shipeasy/sdk/flags_client"
+require_relative "shipeasy/engine"
+require_relative "shipeasy/client"
 require_relative "shipeasy/sdk/anon_id"
 require_relative "shipeasy/sdk/rack_middleware"
 require_relative "shipeasy/i18n/label_fetcher"
@@ -19,16 +20,16 @@ end
 
 module Shipeasy
   module SDK
-    # Convenience constructor. Reads api_key + base_url from the gem-wide
-    # config when omitted, so a single `Shipeasy.configure { … }` block at
-    # boot is enough.
+    # Convenience constructor for a heavyweight Engine. Reads api_key + base_url
+    # from the gem-wide config when omitted. Most apps should prefer
+    # `Shipeasy.configure { … }` + `Shipeasy::Client.new(user)` instead.
     def self.new_client(api_key: Shipeasy.config.api_key, base_url: Shipeasy.config.base_url)
-      FlagsClient.new(api_key: api_key, base_url: base_url)
+      Shipeasy::Engine.new(api_key: api_key, base_url: base_url)
     end
 
     # ---- see() module-level facade --------------------------------------
     #
-    # Backed by a default client, registered when a FlagsClient is constructed
+    # Backed by a default client, registered when an Engine is constructed
     # (last constructed wins). Mirrors the package-level see() in the TS/Python
     # SDKs so callers can `Shipeasy::SDK.see(e).causes_the(...).to(...)` without
     # threading a client reference through every call site. A call before any
@@ -38,7 +39,7 @@ module Shipeasy
     @see_default_mutex  = Mutex.new
 
     # Register the client backing the module-level see() funcs. Called
-    # automatically from FlagsClient#initialize; also exposed for explicit use.
+    # automatically from Engine#initialize; also exposed for explicit use.
     def self.set_default_client(client)
       @see_default_mutex.synchronize { @see_default_client = client }
       client

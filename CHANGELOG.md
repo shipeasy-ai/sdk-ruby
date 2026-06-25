@@ -1,5 +1,51 @@
 # Changelog
 
+## 2.0.0 (2026-06-25)
+
+**BREAKING: new `Shipeasy.configure` + `Shipeasy::Client.new(user)` front door.**
+
+- **Rename `Shipeasy::SDK::FlagsClient` → `Shipeasy::Engine`.** The
+  heavyweight class (owns the api key, HTTP transport, blob cache, poll timer,
+  `init`/`init_once`, local overrides, `track`, `see()`/default-client wiring)
+  is now a clean top-level `Shipeasy::Engine`. Its public surface is otherwise
+  unchanged — `for_testing` / `from_snapshot` / `from_file`, `override_*`,
+  `on_change`, `track`, `log_exposure`, `evaluate`, `bootstrap_script_tag`,
+  `i18n_script_tag`, `see`/`see_violation`/`control_flow_exception` all keep the
+  same signatures. `Shipeasy::SDK.new_client` and `Shipeasy.flags` now return an
+  `Engine`. Update any direct `Shipeasy::SDK::FlagsClient` references (including
+  the `REASON_*` constants and `FlagDetail`, which moved to `Shipeasy::Engine`).
+
+- **New `Shipeasy::Client` — a lightweight, user-bound handle built via its
+  real constructor.** `Shipeasy::Client.new(user)`:
+  - reads the api key from the global config (NO key argument),
+  - runs the configured `attributes` transform on `user` **once at
+    construction**, then applies the existing `__se_anon_id` request-context
+    merge, and stores the resulting attribute hash,
+  - exposes `get_flag(name, default:)`, `get_flag_detail(name)`,
+    `get_config(name, decode, default:)`, `get_experiment(name, default_params,
+    decode)`, `get_killswitch(name, switch_key)` — all with **NO user
+    argument** — forwarding to the single global engine.
+  - is cheap: it never opens its own connection, fetches, or polls.
+
+  The end-state call is literally `Shipeasy::Client.new(user).get_flag("name")`.
+  Constructing a `Client` before `Shipeasy.configure` raises `Shipeasy::Error`.
+
+- **`Shipeasy.configure { |c| … }` now also accepts `c.attributes`** — a
+  callable mapping your own user object (any shape) to the Shipeasy attribute
+  hash (default = identity). On `configure`, the gem builds and registers the
+  ONE global engine (`Shipeasy.engine`, first-config-wins) from `api_key` /
+  `base_url` and kicks off its one-shot fetch fire-and-forget, so a bound
+  `Client` resolves against real rules with no explicit `init` call.
+
+- **New `Shipeasy::Engine#get_killswitch(name, switch_key = nil)`** — reads a
+  killswitch from the cached blob (whole-switch `killed`, or a named per-key
+  `switches` entry). Surfaced on `Shipeasy::Client` too.
+
+Migration: `Shipeasy.flags.get_flag(name, user)` still works (the legacy
+singleton is retained). New code should prefer
+`Shipeasy.configure { |c| c.api_key = …; c.attributes = ->(u){ … } }` then
+`Shipeasy::Client.new(user).get_flag("name")`.
+
 ## 1.7.0 (2026-06-20)
 
 - **SSR bootstrap script-tag helpers.** New `FlagsClient#evaluate(user)`

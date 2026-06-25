@@ -14,34 +14,56 @@ gem "shipeasy-sdk"
 
 ## Quickstart (Rails)
 
-`config/initializers/shipeasy.rb` is all you need:
+Two parts: **configure once** at boot, then build a **user-bound
+`Shipeasy::Client`** per request via its constructor.
+
+`config/initializers/shipeasy.rb`:
 
 ```ruby
 Shipeasy.configure do |c|
   c.api_key    = ENV.fetch("SHIPEASY_SERVER_KEY")
+
+  # Optional: map YOUR user object → the Shipeasy attribute hash. Runs once,
+  # in the Shipeasy::Client constructor. Omit it and the object you pass to
+  # Shipeasy::Client.new IS the attribute hash (identity).
+  c.attributes = ->(u) { { "user_id" => u.id, "plan" => u.plan } }
+
   c.public_key = ENV.fetch("SHIPEASY_CLIENT_KEY")  # for i18n view helpers
   c.profile    = "default"
 end
 ```
 
-Anywhere in your app:
+`configure` builds the single global engine for you and kicks off a one-shot
+fetch (fire-and-forget). Anywhere in your app, construct a bound client and call
+the getters with **no user argument** — the user is bound at construction:
 
 ```ruby
-user = { user_id: current_user.id, plan: current_user.plan }
+flags = Shipeasy::Client.new(current_user)   # runs the attributes transform once
 
-if Shipeasy.flags.get_flag("new_checkout", user)
+if flags.get_flag("new_checkout")            # NO user arg
   # ship it
 end
 
-color  = Shipeasy.flags.get_config("button_color")
-result = Shipeasy.flags.get_experiment("checkout_cta", user, { label: "Buy now" })
-Shipeasy.flags.track(current_user.id.to_s, "checkout_completed", { revenue: 49.99 })
+color  = flags.get_config("button_color")
+result = flags.get_experiment("checkout_cta", { label: "Buy now" })
+panic  = flags.get_killswitch("payments")
 ```
 
-`Shipeasy.flags` is a lazy, **fork-safe** singleton: the first call from
-each process spawns its own `FlagsClient` and starts the background poll
-thread, including post-fork Puma workers under `preload_app!`. No need
-for `before_worker_boot` hooks or holding a global constant.
+`Shipeasy::Client` is **cheap**: it delegates evaluation to the single engine
+built by `configure` — it never opens its own connection, fetches, or polls.
+Construct one per user / per request.
+
+Event ingestion (`track`) lives on the engine — `Shipeasy.engine` is the global
+one `configure` registered:
+
+```ruby
+Shipeasy.engine.track(current_user.id.to_s, "checkout_completed", { revenue: 49.99 })
+```
+
+> **Upgrading from 1.x?** The heavyweight client was renamed
+> `Shipeasy::SDK::FlagsClient` → `Shipeasy::Engine`, and `Shipeasy::Client` is
+> now the lightweight user-bound handle. The legacy `Shipeasy.flags.get_flag(name, user)`
+> singleton still works.
 
 In a Rails view (the railtie auto-mounts these helpers when Rails is loaded):
 
@@ -61,7 +83,7 @@ wiring** — `get_flag` on an anonymous request just works:
 
 ```ruby
 # current_user is nil → buckets on the __se_anon_id cookie automatically
-Shipeasy.flags.get_flag("new_checkout", {})
+Shipeasy::Client.new({}).get_flag("new_checkout")
 ```
 
 An explicit `user_id` / `anonymous_id` always wins. If you prefer to read the id
@@ -86,7 +108,8 @@ require "shipeasy-sdk"
 
 Shipeasy.configure { |c| c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY") }
 
-Shipeasy.flags.get_flag("new_checkout", { user_id: "u_1" })
+# With no `attributes` transform, the hash you pass IS the attribute map.
+Shipeasy::Client.new({ "user_id" => "u_1" }).get_flag("new_checkout")
 ```
 
 The Rails view helpers (`i18n_*`) are not loaded outside Rails, so the
@@ -99,9 +122,9 @@ short-lived function. Build the client explicitly and call `init_once`
 for a single synchronous fetch:
 
 ```ruby
-client = Shipeasy::SDK::FlagsClient.new(api_key: ENV.fetch("SHIPEASY_SERVER_KEY"))
-client.init_once
-client.get_flag("new_checkout", user)
+engine = Shipeasy::Engine.new(api_key: ENV.fetch("SHIPEASY_SERVER_KEY"))
+engine.init_once
+engine.get_flag("new_checkout", user)
 ```
 
 ## Lifecycle escape hatch
@@ -206,9 +229,9 @@ endpoints:
 ```
 
 ```ruby
-client = Shipeasy::SDK::FlagsClient.from_file("snapshot.json")
+client = Shipeasy::Engine.from_file("snapshot.json")
 # or, from already-parsed blobs:
-client = Shipeasy::SDK::FlagsClient.from_snapshot(flags: flags_body, experiments: exps_body)
+client = Shipeasy::Engine.from_snapshot(flags: flags_body, experiments: exps_body)
 
 client.get_flag("new_checkout", user)        # real evaluation, no network
 client.get_experiment("checkout_cta", user, {})
@@ -235,7 +258,7 @@ snapshot.
 
 For unit/integration tests you want a client that does **zero network** and
 returns exactly the values you seed — no api_key, no fetch, no poll thread, no
-telemetry, no metric ingestion. Build one with `FlagsClient.for_testing` and
+telemetry, no metric ingestion. Build one with `Shipeasy::Engine.for_testing` and
 seed each entity with the `override_*` setters (Statsig-style local overrides).
 An override always wins over the fetched blob, so the getters answer
 deterministically:
@@ -243,7 +266,7 @@ deterministically:
 ```ruby
 require "shipeasy-sdk"
 
-client = Shipeasy::SDK::FlagsClient.for_testing
+client = Shipeasy::Engine.for_testing
 # init / init_once are no-ops here — nothing is ever fetched.
 
 # Flags (boolean)
@@ -272,31 +295,35 @@ client.clear_overrides
 
 The same `override_flag` / `override_config` / `override_experiment` /
 `clear_overrides` setters also work on a **normal** live client (built with
-`FlagsClient.new(...)`), so you can pin one value in local development while the
+`Shipeasy::Engine.new(...)`), so you can pin one value in local development while the
 rest comes from the fetched blob.
 
-### Rails singleton
+### Global engine / bound client
 
-`Shipeasy.flags` is a process-wide singleton that fetches over the network, so
-in tests prefer a `for_testing` client. If a code path reaches through
-`Shipeasy.flags` directly, stub the singleton to the test client in your test
-setup:
+`Shipeasy.engine` (registered by `configure`) and `Shipeasy.flags` (legacy
+singleton) both fetch over the network, so in tests stub them to a
+`for_testing` engine. `Shipeasy::Client.new(user)` reads `Shipeasy.engine`, so
+stubbing the engine also covers the bound-client path:
 
 ```ruby
 # RSpec
 before do
-  test_client = Shipeasy::SDK::FlagsClient.for_testing
-  test_client.override_flag("new_checkout", true)
-  allow(Shipeasy).to receive(:flags).and_return(test_client)
+  test_engine = Shipeasy::Engine.for_testing
+  test_engine.override_flag("new_checkout", true)
+  allow(Shipeasy).to receive(:engine).and_return(test_engine)
+  allow(Shipeasy).to receive(:flags).and_return(test_engine) # legacy path
+
+  # Shipeasy::Client.new(user).get_flag("new_checkout") now => true
 end
 ```
 
 ## Configuration
 
-| Parameter  | Default                   | Description                         |
-| ---------- | ------------------------- | ----------------------------------- |
-| `api_key`  | (required)                | SDK key from the Shipeasy dashboard |
-| `base_url` | `https://cdn.shipeasy.ai` | Override for local dev / staging    |
+| Parameter    | Default                       | Description                                                         |
+| ------------ | ----------------------------- | ------------------------------------------------------------------- |
+| `api_key`    | (required)                    | SDK key from the Shipeasy dashboard                                 |
+| `base_url`   | `https://edge.shipeasy.dev`   | Override for local dev / staging                                    |
+| `attributes` | identity (`->(u) { u }`)      | Callable mapping your user object → the Shipeasy attribute hash     |
 
 ## Documentation
 

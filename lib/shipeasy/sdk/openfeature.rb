@@ -11,7 +11,7 @@
 #   require "open_feature/sdk"
 #   require "shipeasy/sdk/openfeature"
 #
-#   client = Shipeasy::SDK::FlagsClient.new(api_key: ENV.fetch("SHIPEASY_SERVER_KEY"))
+#   client = Shipeasy::Engine.new(api_key: ENV.fetch("SHIPEASY_SERVER_KEY"))
 #   client.init
 #
 #   OpenFeature::SDK.configure do |config|
@@ -22,7 +22,7 @@
 #   on = of.fetch_boolean_value(flag_key: "new_checkout", default_value: false,
 #                               evaluation_context: OpenFeature::SDK::EvaluationContext.new(targeting_key: "u1"))
 #
-# Pure adapter over `FlagsClient` — no change to evaluation. Boolean values map
+# Pure adapter over `Shipeasy::Engine` — no change to evaluation. Boolean values map
 # onto gates (`get_flag_detail`); string/number/integer/float/object map onto
 # dynamic configs (`get_config`).
 
@@ -37,12 +37,12 @@ rescue LoadError => e
                    "gem \"openfeature-sdk\". (#{e.message})"
 end
 
-require_relative "flags_client"
+require_relative "../engine"
 
 module Shipeasy
   module OpenFeature
     # Shipeasy OpenFeature provider (server paradigm). Wraps a
-    # `Shipeasy::SDK::FlagsClient`; evaluation is local against the cached blob,
+    # `Shipeasy::Engine`; evaluation is local against the cached blob,
     # so resolution is effectively synchronous.
     class Provider
       OF = ::OpenFeature::SDK::Provider
@@ -56,12 +56,12 @@ module Shipeasy
       #   FLAG_NOT_FOUND   → ERROR (error_code FLAG_NOT_FOUND)
       #   CLIENT_NOT_READY → ERROR (error_code PROVIDER_NOT_READY)
       REASON_MAP = {
-        Shipeasy::SDK::FlagsClient::REASON_RULE_MATCH       => [OF::Reason::TARGETING_MATCH, nil],
-        Shipeasy::SDK::FlagsClient::REASON_DEFAULT          => [OF::Reason::DEFAULT, nil],
-        Shipeasy::SDK::FlagsClient::REASON_OFF              => [OF::Reason::DISABLED, nil],
-        Shipeasy::SDK::FlagsClient::REASON_OVERRIDE         => [OF::Reason::STATIC, nil],
-        Shipeasy::SDK::FlagsClient::REASON_FLAG_NOT_FOUND   => [OF::Reason::ERROR, OF::ErrorCode::FLAG_NOT_FOUND],
-        Shipeasy::SDK::FlagsClient::REASON_CLIENT_NOT_READY => [OF::Reason::ERROR, OF::ErrorCode::PROVIDER_NOT_READY],
+        Shipeasy::Engine::REASON_RULE_MATCH       => [OF::Reason::TARGETING_MATCH, nil],
+        Shipeasy::Engine::REASON_DEFAULT          => [OF::Reason::DEFAULT, nil],
+        Shipeasy::Engine::REASON_OFF              => [OF::Reason::DISABLED, nil],
+        Shipeasy::Engine::REASON_OVERRIDE         => [OF::Reason::STATIC, nil],
+        Shipeasy::Engine::REASON_FLAG_NOT_FOUND   => [OF::Reason::ERROR, OF::ErrorCode::FLAG_NOT_FOUND],
+        Shipeasy::Engine::REASON_CLIENT_NOT_READY => [OF::Reason::ERROR, OF::ErrorCode::PROVIDER_NOT_READY],
       }.freeze
 
       attr_reader :metadata

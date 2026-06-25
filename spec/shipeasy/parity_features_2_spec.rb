@@ -4,7 +4,7 @@ require "spec_helper"
 #   A. private_attributes — stripped from outbound track() props
 #   B. log_exposure — manual server-side exposure logging
 #   C. sticky bucketing — StickyBucketStore + InMemoryStickyStore
-RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
+RSpec.describe "Shipeasy::Engine parity features (round 2)" do
   # Capture the JSON body that would be POSTed to /collect, synchronously.
   # track/log_exposure post inside a Thread.new; we stub `post` to record the
   # parsed body and join the spawned thread so the assertion is deterministic.
@@ -29,7 +29,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
 
   describe "private_attributes (track stripping)" do
     it "strips listed keys from the outbound track properties" do
-      client = Shipeasy::SDK::FlagsClient.new(
+      client = Shipeasy::Engine.new(
         api_key: "k", disable_telemetry: true, private_attributes: %w[email ssn]
       )
       bodies = capture_collect(client) do
@@ -40,7 +40,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
     end
 
     it "strips symbol-keyed private attributes too" do
-      client = Shipeasy::SDK::FlagsClient.new(
+      client = Shipeasy::Engine.new(
         api_key: "k", disable_telemetry: true, private_attributes: ["email"]
       )
       bodies = capture_collect(client) do
@@ -51,7 +51,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
     end
 
     it "leaves props untouched when no private_attributes are configured" do
-      client = Shipeasy::SDK::FlagsClient.new(api_key: "k", disable_telemetry: true)
+      client = Shipeasy::Engine.new(api_key: "k", disable_telemetry: true)
       bodies = capture_collect(client) do
         client.track("u_1", "purchase", { "email" => "a@b.com" })
       end
@@ -59,7 +59,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
     end
 
     it "omits the properties key entirely when stripping empties the bag" do
-      client = Shipeasy::SDK::FlagsClient.new(
+      client = Shipeasy::Engine.new(
         api_key: "k", disable_telemetry: true, private_attributes: ["email"]
       )
       bodies = capture_collect(client) do
@@ -91,7 +91,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
     # blobs directly (load_snapshot) without going through from_snapshot (which
     # is test_mode and short-circuits log_exposure to a no-op).
     def live_client_with(exps)
-      client = Shipeasy::SDK::FlagsClient.new(api_key: "k", disable_telemetry: true)
+      client = Shipeasy::Engine.new(api_key: "k", disable_telemetry: true)
       client.send(:load_snapshot, {}, exps)
       client
     end
@@ -125,7 +125,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
     end
 
     it "is a no-op in test mode" do
-      client = Shipeasy::SDK::FlagsClient.for_testing
+      client = Shipeasy::Engine.for_testing
       expect(client).not_to receive(:post)
       expect(client.log_exposure("u_1", "exp")).to be_nil
     end
@@ -173,7 +173,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
     end
 
     it "absent store ⇒ deterministic (no persistence)" do
-      client = Shipeasy::SDK::FlagsClient.from_snapshot(experiments: exps)
+      client = Shipeasy::Engine.from_snapshot(experiments: exps)
       first  = client.get_experiment("exp", user, {}).group
       second = client.get_experiment("exp", user, {}).group
       expect(first).to eq(second) # deterministic regardless
@@ -181,7 +181,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
 
     it "persists the fresh pick into the store" do
       store = Shipeasy::SDK::InMemoryStickyStore.new
-      client = Shipeasy::SDK::FlagsClient.new(
+      client = Shipeasy::Engine.new(
         api_key: "k", disable_telemetry: true, sticky_store: store
       )
       client.send(:load_snapshot, {}, exps)
@@ -200,7 +200,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
       )
       shrunk = exps.dup
       shrunk["experiments"]["exp"] = exps["experiments"]["exp"].merge("allocationPct" => 0)
-      client = Shipeasy::SDK::FlagsClient.new(
+      client = Shipeasy::Engine.new(
         api_key: "k", disable_telemetry: true, sticky_store: seeded
       )
       client.send(:load_snapshot, {}, shrunk)
@@ -214,7 +214,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
       stale = Shipeasy::SDK::InMemoryStickyStore.new(
         "u_42" => { "exp" => { "g" => "treatment", "s" => "OLDSALT8" } }
       )
-      client = Shipeasy::SDK::FlagsClient.new(
+      client = Shipeasy::Engine.new(
         api_key: "k", disable_telemetry: true, sticky_store: stale
       )
       client.send(:load_snapshot, {}, exps)
@@ -228,7 +228,7 @@ RSpec.describe "Shipeasy::SDK::FlagsClient parity features (round 2)" do
       gone = Shipeasy::SDK::InMemoryStickyStore.new(
         "u_42" => { "exp" => { "g" => "removed_group", "s" => salt8 } }
       )
-      client = Shipeasy::SDK::FlagsClient.new(
+      client = Shipeasy::Engine.new(
         api_key: "k", disable_telemetry: true, sticky_store: gone
       )
       client.send(:load_snapshot, {}, exps)

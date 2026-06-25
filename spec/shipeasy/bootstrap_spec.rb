@@ -3,7 +3,7 @@ require "cgi"
 
 RSpec.describe "SSR bootstrap script tags" do
   def client
-    Shipeasy::SDK::FlagsClient.from_snapshot(
+    Shipeasy::Engine.from_snapshot(
       flags: {
         "gates" => {
           "new_ui"   => { "enabled" => true, "salt" => "s", "rolloutPct" => 10_000 },

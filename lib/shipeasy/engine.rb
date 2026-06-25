@@ -3,15 +3,31 @@ require "uri"
 require "json"
 require "thread"
 require "cgi"
-require_relative "eval"
-require_relative "telemetry"
-require_relative "anon_id"
-require_relative "sticky_store"
-require_relative "see"
+require_relative "sdk/eval"
+require_relative "sdk/telemetry"
+require_relative "sdk/anon_id"
+require_relative "sdk/sticky_store"
+require_relative "sdk/see"
 
 module Shipeasy
-  module SDK
-    class FlagsClient
+  # The heavyweight engine: owns the api key, HTTP transport, the blob cache,
+  # the background poll timer, init/init_once, local overrides, track, and
+  # see()/default-client wiring. Was `Shipeasy::SDK::FlagsClient` before 2.0;
+  # renamed to a clean top-level `Shipeasy::Engine` when the lightweight
+  # user-bound `Shipeasy::Client` became the primary front door.
+  #
+  # Most apps never construct an Engine directly — `Shipeasy.configure { … }`
+  # builds and registers the one global engine for you. Construct one explicitly
+  # only for advanced/serverless flows (multiple keys, offline snapshots).
+  class Engine
+      # Internal collaborators still live under Shipeasy::SDK; alias them so the
+      # body below can keep referring to them unqualified after the class moved
+      # out from under the SDK namespace.
+      Eval      = Shipeasy::SDK::Eval
+      Telemetry = Shipeasy::SDK::Telemetry
+      AnonId    = Shipeasy::SDK::AnonId
+      See       = Shipeasy::SDK::See
+
       DEFAULT_BASE_URL = "https://edge.shipeasy.dev"
       # CDN origin serving the static loader scripts (/sdk/bootstrap.js,
       # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
@@ -34,7 +50,7 @@ module Shipeasy
         @sticky_store = sticky_store
         # Test mode: no network, ever. init/init_once/track become no-ops and
         # evaluation answers come purely from local overrides. Built via the
-        # FlagsClient.for_testing factory; see clear_overrides / override_*.
+        # Engine.for_testing factory; see clear_overrides / override_*.
         @test_mode   = test_mode
         # Per-evaluation usage telemetry. ON by default; pass
         # disable_telemetry: true to opt out. See telemetry.rb.
@@ -273,6 +289,28 @@ module Shipeasy
         end
 
         result
+      end
+
+      # Public hook for the bound Shipeasy::Client: normalise an attribute hash
+      # and apply the request-scoped anonymous_id merge ONCE, at Client
+      # construction, exactly as every per-call getter does internally.
+      def bind_attributes(user)
+        with_anon_id(user)
+      end
+
+      # Read a killswitch from the cached flags blob. Without +switch_key+,
+      # returns true when the whole killswitch is killed. With +switch_key+,
+      # returns true when that specific per-key switch is on. Unknown
+      # killswitches / switches return false. Not user-scoped.
+      def get_killswitch(name, switch_key = nil)
+        @telemetry.emit("ks", name)
+        ks = @mutex.synchronize { @flags_blob&.dig("killswitches", name.to_s) }
+        return false unless ks
+        if switch_key.nil?
+          Eval.enabled?(ks["killed"])
+        else
+          Eval.enabled?(ks.dig("switches", switch_key.to_s))
+        end
       end
 
       # Batch-evaluate every loaded gate, config and experiment for +user+ into
@@ -576,6 +614,5 @@ module Shipeasy
         http.read_timeout = 10
         http.post(uri.request_uri, body, { "X-SDK-Key" => @api_key, "Content-Type" => "text/plain" })
       end
-    end
   end
 end

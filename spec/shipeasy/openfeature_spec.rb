@@ -16,7 +16,7 @@ openfeature_available =
   end
 
 RSpec.describe "Shipeasy::OpenFeature::Provider", if: openfeature_available do
-  let(:client) { Shipeasy::SDK::FlagsClient.for_testing }
+  let(:client) { Shipeasy::Engine.for_testing }
   let(:provider) { Shipeasy::OpenFeature::Provider.new(client) }
 
   def ctx(targeting_key: nil, **attrs)
@@ -67,7 +67,7 @@ RSpec.describe "Shipeasy::OpenFeature::Provider", if: openfeature_available do
 
     it "maps a not-ready client to ERROR + PROVIDER_NOT_READY" do
       # A live client with no init() and no blob → CLIENT_NOT_READY.
-      bare = Shipeasy::SDK::FlagsClient.new(api_key: "k", disable_telemetry: true)
+      bare = Shipeasy::Engine.new(api_key: "k", disable_telemetry: true)
       res = Shipeasy::OpenFeature::Provider.new(bare).fetch_boolean_value(
         flag_key: "x", default_value: false, evaluation_context: ctx(targeting_key: "u_1"),
       )
@@ -86,7 +86,7 @@ RSpec.describe "Shipeasy::OpenFeature::Provider", if: openfeature_available do
         },
         "configs" => {},
       }
-      snap = Shipeasy::SDK::FlagsClient.from_snapshot(flags: flags, experiments: nil)
+      snap = Shipeasy::Engine.from_snapshot(flags: flags, experiments: nil)
       p = Shipeasy::OpenFeature::Provider.new(snap)
 
       on = p.fetch_boolean_value(flag_key: "fully_on", default_value: false,
@@ -104,7 +104,7 @@ RSpec.describe "Shipeasy::OpenFeature::Provider", if: openfeature_available do
       captured = nil
       allow(client).to receive(:get_flag_detail) do |name, user|
         captured = user
-        Shipeasy::SDK::FlagsClient::FlagDetail.new(value: true, reason: "RULE_MATCH")
+        Shipeasy::Engine::FlagDetail.new(value: true, reason: "RULE_MATCH")
       end
       provider.fetch_boolean_value(
         flag_key: "f", default_value: false,

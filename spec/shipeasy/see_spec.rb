@@ -28,7 +28,7 @@ RSpec.describe "Shipeasy::SDK see()" do
   end
 
   def live_client(**opts)
-    Shipeasy::SDK::FlagsClient.new(api_key: "srv_key", disable_telemetry: true, **opts)
+    Shipeasy::Engine.new(api_key: "srv_key", disable_telemetry: true, **opts)
   end
 
   describe "instance #see" do
@@ -146,7 +146,7 @@ RSpec.describe "Shipeasy::SDK see()" do
 
   describe "test mode" do
     it "is a no-op (never posts, never spawns a thread)" do
-      client = Shipeasy::SDK::FlagsClient.for_testing
+      client = Shipeasy::Engine.for_testing
       expect(Thread).not_to receive(:new)
       expect(client).not_to receive(:post)
       client.see(RuntimeError.new("x")).causes_the("checkout").to("use cached prices")

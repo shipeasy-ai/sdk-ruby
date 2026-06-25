@@ -33,7 +33,7 @@ module Shipeasy
       end
 
       # The anon id RackMiddleware resolved for the current request, or nil when
-      # no middleware ran (e.g. a background job). FlagsClient falls back to this
+      # no middleware ran (e.g. a background job). The Engine falls back to this
       # as the default anonymous_id, so evaluations need no per-call wiring.
       def current
         Thread.current[THREAD_KEY]
