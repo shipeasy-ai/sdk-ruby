@@ -51,6 +51,22 @@ RSpec.describe "Shipeasy.configure + Shipeasy::Client(user)" do
       # Unknown killswitch → false (no blob loaded).
       expect(client.get_killswitch("panic")).to be(false)
     end
+
+    it "forwards track to the engine using the bound id" do
+      Shipeasy.configure { |c| c.api_key = "srv_key" }
+      client = Shipeasy::Client.new("user_id" => "u1")
+
+      expect(Shipeasy.engine).to receive(:track).with("u1", "click", { "btn" => "red" })
+      client.track("click", { "btn" => "red" })
+    end
+
+    it "forwards log_exposure to the engine using the bound attributes" do
+      Shipeasy.configure { |c| c.api_key = "srv_key" }
+      client = Shipeasy::Client.new("user_id" => "u1", "plan" => "pro")
+
+      expect(Shipeasy.engine).to receive(:log_exposure).with(client.attributes, "exp1")
+      client.log_exposure("exp1")
+    end
   end
 
   describe "attributes transform" do

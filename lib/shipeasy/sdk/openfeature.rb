@@ -123,12 +123,23 @@ module Shipeasy
       end
 
       # OpenFeature `track()` → Shipeasy `track()`. No-ops without a targeting key.
-      def track(tracking_event_name, evaluation_context: nil, details: {})
+      def track(tracking_event_name, evaluation_context: nil, tracking_event_details: nil)
         ctx = normalize_context(evaluation_context)
         user_id = ctx["targeting_key"] || ctx["user_id"]
         return if user_id.nil? || user_id.to_s.empty?
 
-        props = details.is_a?(Hash) ? details : {}
+        props = if tracking_event_details.respond_to?(:fields)
+                  tracking_event_details.fields.transform_keys(&:to_s)
+                elsif tracking_event_details.is_a?(Hash)
+                  tracking_event_details.transform_keys(&:to_s)
+                else
+                  {}
+                end
+
+        if tracking_event_details.respond_to?(:value) && !tracking_event_details.value.nil?
+          props["value"] = tracking_event_details.value
+        end
+
         @client.track(user_id, tracking_event_name, props)
       end
 

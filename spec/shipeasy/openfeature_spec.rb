@@ -116,6 +116,36 @@ RSpec.describe "Shipeasy::OpenFeature::Provider", if: openfeature_available do
     end
   end
 
+  describe "#track" do
+    it "forwards to engine#track using targeting_key as user_id" do
+      expect(client).to receive(:track).with("u_1", "checkout_completed", { "plan" => "pro" })
+      provider.track("checkout_completed",
+                     evaluation_context: ctx(targeting_key: "u_1", plan: "pro"))
+    end
+
+    it "handles the new OpenFeature TrackingEventDetails object" do
+      # Mock the TrackingEventDetails object since we don't have openfeature-sdk loaded here
+      details = double("TrackingEventDetails", value: 99.99, fields: { "currency" => "USD" })
+      expect(client).to receive(:track).with("u_1", "purchase", { "currency" => "USD", "value" => 99.99 })
+
+      provider.track("purchase",
+                     evaluation_context: ctx(targeting_key: "u_1"),
+                     tracking_event_details: details)
+    end
+
+    it "handles a plain hash as tracking_event_details (backward compatibility / flexibility)" do
+      expect(client).to receive(:track).with("u_1", "purchase", { "plan" => "pro" })
+      provider.track("purchase",
+                     evaluation_context: ctx(targeting_key: "u_1"),
+                     tracking_event_details: { "plan" => "pro" })
+    end
+
+    it "no-ops when no user_id or targeting_key is present" do
+      expect(client).not_to receive(:track)
+      provider.track("event", evaluation_context: ctx(plan: "pro"))
+    end
+  end
+
   describe "config resolution" do
     it "resolves a string config as TARGETING_MATCH" do
       client.override_config("button_color", "blue")

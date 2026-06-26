@@ -55,6 +55,15 @@ module Shipeasy
     def get_killswitch(name, switch_key = nil)
       @engine.get_killswitch(name, switch_key)
     end
+
+    def track(event_name, props = {})
+      id = @attributes["user_id"] || @attributes["anonymous_id"]
+      @engine.track(id, event_name, props)
+    end
+
+    def log_exposure(experiment_name)
+      @engine.log_exposure(@attributes, experiment_name)
+    end
   end
 
   # Raised by Shipeasy::Client when constructed before Shipeasy.configure.
