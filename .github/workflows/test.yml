@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: test-${{ github.ref }}
@@ -15,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ["3.0", "3.2", "3.3"]
+        ruby: ["3.0", "3.1", "3.2", "3.3", "3.4"]
     steps:
       - uses: actions/checkout@v6
 
@@ -25,3 +26,18 @@ jobs:
           bundler-cache: true
 
       - run: bundle exec rspec
+
+  readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+
+      - name: README is generated from docs/ — check it's in sync
+        run: |
+          ruby scripts/gen_readme.rb
+          git diff --exit-code README.md \
+            || { echo "::error::README.md is out of date — run 'ruby scripts/gen_readme.rb' and commit."; exit 1; }

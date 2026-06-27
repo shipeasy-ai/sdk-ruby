@@ -1,13 +1,11 @@
-# Feature flags (gates)
+# Feature flags — `get_flag`
 
-Boolean feature gates with targeting + rollout, evaluated locally against the
-cached blob.
-
-## Bound Client form (preferred)
-
-The user is bound at construction, so `get_flag` takes **no user argument**:
+A flag (gate) evaluates to a boolean for a given user. After
+[`Shipeasy.configure`](configuration.md) has run once at boot, bind a user with
+`Shipeasy::Client.new(user)` and read with **no user argument**.
 
 ```ruby
+# construct once per callsite (cheap; binds the user)
 flags = Shipeasy::Client.new(current_user)
 
 if flags.get_flag("new_checkout")
@@ -15,53 +13,54 @@ if flags.get_flag("new_checkout")
 end
 ```
 
-## Low-level Engine form
-
-The engine getter takes the user explicitly:
-
-```ruby
-Shipeasy.engine.get_flag("new_checkout", { "user_id" => "u_1", "plan" => "pro" })
-```
-
 ## Default / fallback behaviour
 
-`get_flag` accepts an optional `default:` returned **only when the value cannot
-be resolved** — never when a gate genuinely evaluates to `false`:
+`get_flag(name, default: false)` returns `default` **only when the value cannot
+be evaluated** — never when the gate simply resolves off:
 
 ```ruby
-flags.get_flag("new_checkout", default: true)            # bound Client
-Shipeasy.engine.get_flag("new_checkout", user, default: true)
+# default is returned only if Shipeasy isn't ready yet OR the gate isn't in the
+# blob. A gate that evaluates to false (disabled, killed, or outside its rollout)
+# returns false, NOT the default.
+flags.get_flag("new_checkout", default: true)
 ```
 
-The default is returned only when the client isn't ready yet (no blob fetched)
-or the gate doesn't exist. A gate that is disabled, killed, or outside its
-rollout returns `false`, **not** the default.
+## Evaluation detail — `get_flag_detail`
 
-## Evaluation detail + reason
-
-`get_flag_detail` returns a `FlagDetail` struct with `.value` and `.reason`.
-`get_flag` is built on top of it.
+`get_flag_detail` returns a `FlagDetail` struct (`.value`, `.reason`) so you can
+log *why* a flag resolved the way it did. `get_flag` is built on top of it.
 
 ```ruby
-detail = flags.get_flag_detail("new_checkout")           # bound Client
+detail = flags.get_flag_detail("new_checkout")
 detail.value    # => true / false
 detail.reason   # => "RULE_MATCH" / "DEFAULT" / "OFF" / ...
-
-# Engine form:
-Shipeasy.engine.get_flag_detail("new_checkout", user)
 ```
 
-| Reason             | Meaning |
-| ------------------ | ------- |
-| `OVERRIDE`         | answered by a local `override_flag` (no telemetry) |
-| `CLIENT_NOT_READY` | no flag blob fetched/loaded yet |
-| `FLAG_NOT_FOUND`   | blob present, but this gate isn't in it |
-| `OFF`              | gate present but disabled or killswitched |
-| `RULE_MATCH`       | evaluated to `true` |
-| `DEFAULT`          | evaluated to `false` (rollout/rule) |
+| reason | meaning |
+| --- | --- |
+| `OVERRIDE` | a [`configure_for_testing`](testing.md) / `override_flag` override forced the value |
+| `CLIENT_NOT_READY` | the first fetch hasn't completed yet → `value` false |
+| `FLAG_NOT_FOUND` | no gate by that name in the blob → `value` false |
+| `OFF` | the gate exists but is disabled or killswitched → `value` false |
+| `RULE_MATCH` | evaluated **on** (targeting + rollout) |
+| `DEFAULT` | evaluated **off** (fell through) |
 
-The `gate` usage beacon fires exactly once per `get_flag_detail` call (never on
-the `OVERRIDE` short-circuit).
+`get_flag` delegates to `get_flag_detail` and returns `.value`, substituting
+`default` for the `CLIENT_NOT_READY` / `FLAG_NOT_FOUND` cases. The `gate` usage
+beacon fires exactly once per `get_flag_detail` call (never on the `OVERRIDE`
+short-circuit).
+
+## Change listeners
+
+When you run a long-lived server with `configure(poll: true)`, register a
+callback fired after a background poll fetches **new** data (a 200, not a 304).
+It accepts a block or any callable and returns an unsubscribe proc:
+
+```ruby
+unsubscribe = Shipeasy.on_change { reload_local_cache! }
+# ... later
+unsubscribe.call
+```
 
 ## Rollout bucketing
 

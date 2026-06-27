@@ -11,11 +11,10 @@
 #   require "open_feature/sdk"
 #   require "shipeasy/sdk/openfeature"
 #
-#   client = Shipeasy::Engine.new(api_key: ENV.fetch("SHIPEASY_SERVER_KEY"))
-#   client.init
+#   Shipeasy.configure { |c| c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY"); c.poll = true }
 #
 #   OpenFeature::SDK.configure do |config|
-#     config.set_provider(Shipeasy::OpenFeature::Provider.new(client))
+#     config.set_provider(Shipeasy::OpenFeature::Provider.new) # uses the configured global
 #   end
 #
 #   of = OpenFeature::SDK.build_client
@@ -38,6 +37,8 @@ rescue LoadError => e
 end
 
 require_relative "../engine"
+require_relative "../config"
+require_relative "../client"
 
 module Shipeasy
   module OpenFeature
@@ -66,7 +67,17 @@ module Shipeasy
 
       attr_reader :metadata
 
-      def initialize(client)
+      # Construct the provider. With no argument it resolves the global engine
+      # configured via `Shipeasy.configure(...)`, so callers never build an
+      # Engine themselves — construct it AFTER your `Shipeasy.configure` call.
+      # Pass an explicit engine only for advanced/multi-key setups.
+      def initialize(client = nil)
+        client ||= Shipeasy.engine
+        if client.nil?
+          raise Shipeasy::Error, "Shipeasy::OpenFeature::Provider.new needs " \
+            "Shipeasy.configure { |c| c.api_key = … } to have run first " \
+            "(or pass an explicit engine)."
+        end
         @client = client
         @metadata = OF::ProviderMetadata.new(name: "shipeasy").freeze
       end
@@ -128,13 +139,18 @@ module Shipeasy
         user_id = ctx["targeting_key"] || ctx["user_id"]
         return if user_id.nil? || user_id.to_s.empty?
 
-        props = if tracking_event_details.respond_to?(:fields)
-                  tracking_event_details.fields.transform_keys(&:to_s)
-                elsif tracking_event_details.is_a?(Hash)
-                  tracking_event_details.transform_keys(&:to_s)
-                else
-                  {}
-                end
+        # Base props = the evaluation-context attributes (minus the identity
+        # keys), with the tracking-event details merged on top.
+        props = ctx.reject { |k, _| k == "targeting_key" || k == "user_id" }
+
+        detail_fields = if tracking_event_details.respond_to?(:fields)
+                          tracking_event_details.fields.transform_keys(&:to_s)
+                        elsif tracking_event_details.is_a?(Hash)
+                          tracking_event_details.transform_keys(&:to_s)
+                        else
+                          {}
+                        end
+        props = props.merge(detail_fields)
 
         if tracking_event_details.respond_to?(:value) && !tracking_event_details.value.nil?
           props["value"] = tracking_event_details.value

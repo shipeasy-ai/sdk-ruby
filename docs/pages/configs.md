@@ -1,29 +1,24 @@
-# Dynamic configs
+# Dynamic configs — `get_config`
 
-Typed remote-config values. Configs are not user-scoped, but `get_config` is
-exposed on the bound Client for one-stop ergonomics.
-
-## Bound Client form
+A config is a typed remote-config value with targeting. Configs are not
+user-scoped, but `get_config` is exposed on the bound Client for one-stop
+ergonomics. After [`Shipeasy.configure`](configuration.md), read it through the
+bound `Shipeasy::Client.new(user)`.
 
 ```ruby
+# construct once per callsite (cheap; binds the user)
 flags = Shipeasy::Client.new(current_user)
 
 color = flags.get_config("button_color")          # raw value
-```
-
-## Engine form
-
-```ruby
-Shipeasy.engine.get_config("button_color")
 ```
 
 ## Optional decode + default
 
 The signature is `get_config(name, decode = nil, default: nil)`:
 
-- `decode` — an optional proc that runs on a **present** value to project it.
-- `default` — returned when the config key is **absent**. The decode proc still
-  runs on a present value; it does not run on the default.
+- `decode` — an optional proc run on a **present** value to project it.
+- `default` — returned when the config key is **absent**. The decode proc runs on
+  a present value; it does not run on the default.
 
 ```ruby
 flags.get_config("button_color", default: "blue")

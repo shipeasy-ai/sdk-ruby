@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.1.0 (2026-06-27)
+
+**Uniform SDK DX standard (experiment-platform doc 23) — parity with the Python
+reference. The documented surface is now exactly `Shipeasy.configure` (+ test/
+offline siblings) and the bound `Shipeasy::Client.new(user)`; the `Engine` stays
+public but is undocumented.** All changes are additive and backward compatible.
+
+- **`Shipeasy.configure_for_testing(flags:, configs:, experiments:, attributes:)`**
+  — a no-network, no-api-key sibling of `configure` that seeds overrides and
+  registers the global engine so `Shipeasy::Client.new(user)` reads them.
+  **Replaces** any prior config (so a suite can reconfigure between cases).
+- **`Shipeasy.configure_for_offline(snapshot:|path:, flags:, configs:,
+  experiments:, attributes:)`** — evaluates the **real** rules from an in-memory
+  snapshot or a JSON file, overrides layered on top. Also replaces prior config.
+- **`c.poll` / `c.init` configure options.** `c.poll = true` starts the
+  background poll from `configure` (no more `Shipeasy.engine.init`); the default
+  (one-shot fetch, no thread) is serverless-friendly.
+- **Advanced `configure` options threaded into the global engine** — `c.env`,
+  `c.disable_telemetry`, `c.telemetry_url`, `c.private_attributes`,
+  `c.sticky_store` — so private attributes / sticky bucketing / env tagging no
+  longer require constructing an `Engine` by hand.
+- **Package-level helpers** so callers never name the `Engine`:
+  `Shipeasy.override_flag/override_config/override_experiment/clear_overrides`,
+  `Shipeasy.on_change`, `Shipeasy.i18n_script_tag`, `Shipeasy.bootstrap_script_tag`,
+  and `Shipeasy.see` / `see_violation` / `control_flow_exception` (delegating to
+  the configured global / last-constructed default client).
+- **`get_killswitch(name, switch_key)` now falls back to the top-level value**
+  when `switch_key` isn't a configured named switch (matching the cross-SDK
+  contract), instead of returning `false`.
+- **OpenFeature provider global form.** `Shipeasy::OpenFeature::Provider.new`
+  (no argument) resolves the engine configured via `Shipeasy.configure`, so the
+  provider is constructed after `configure(...)`, never from an `Engine` handle.
+- **`Engine.for_testing` is now READY against an empty blob** (matching the other
+  SDKs): a missing gate resolves `FLAG_NOT_FOUND` instead of `CLIENT_NOT_READY`.
+  `get_flag` results are unchanged (a missing gate still returns the default).
+- **OpenFeature `track` now folds the evaluation-context attributes** (minus the
+  identity keys) into the metric properties, with the tracking-event details
+  merged on top. (These two fixes also let the OpenFeature suite run green on the
+  new Ruby 3.4 CI row, where the optional `openfeature-sdk` is installed.)
+- **`shipeasy-skill` command** (`bin/shipeasy-skill`) — opt-in installer that
+  copies the bundled `docs/skill/SKILL.md` into `.claude/skills/shipeasy-ruby/`
+  (`install [--dir] [--force]` / `print`). The skill is shipped inside the gem.
+- **README is now generated** from `docs/` by `scripts/gen_readme.rb` (`rake
+  readme`); CI's `readme` job fails on drift. The test matrix covers Ruby
+  3.0–3.4 and the README carries a Tests status badge.
+- **Docs rewritten Engine-free** around `configure` + `Client`, with new
+  `metrics/track` + `ops/see` snippet groups, specific placeholders, and a
+  validated offline snapshot example. Added repo-root + `docs/` `CLAUDE.md`.
+
 ## 2.0.0 (2026-06-25)
 
 **BREAKING: new `Shipeasy.configure` + `Shipeasy::Client.new(user)` front door.**

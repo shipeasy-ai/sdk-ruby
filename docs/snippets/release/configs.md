@@ -1,4 +1,4 @@
-Read the dynamic config `{{RESOURCE_NAME}}` with a fallback default.
+Read the dynamic config `{{CONFIG_KEY}}` with a fallback default.
 
 > Assumes `Shipeasy.configure` ran at startup — see Installation.
 
@@ -10,5 +10,5 @@ flags = Shipeasy::Client.new(current_user)
 #   name    — the config key
 #   decode  — optional proc run on a present value, e.g. ->(v) { v["max"] }
 #   default — returned only when the config key is absent
-value = flags.get_config("{{RESOURCE_NAME}}", default: "blue")
+value = flags.get_config("{{CONFIG_KEY}}", default: "blue")
 ```

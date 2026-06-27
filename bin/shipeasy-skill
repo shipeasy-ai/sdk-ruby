@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Opt-in installer for the bundled Shipeasy agent skill. See
+# lib/shipeasy/sdk/skill.rb.
+require "shipeasy/sdk/skill"
+
+exit Shipeasy::SDK::Skill.main(ARGV)

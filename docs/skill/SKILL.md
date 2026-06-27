@@ -1,23 +1,23 @@
 ---
 name: shipeasy-ruby
-description: Use Shipeasy (feature flags, configs, kill switches, A/B experiments, i18n) from Ruby. Covers configure() + Client(user), get_flag/get_config/get_experiment/get_killswitch, track, testing, OpenFeature.
+description: Use Shipeasy (feature flags, configs, kill switches, A/B experiments, i18n) from Ruby. Covers Shipeasy.configure + Client.new(user), get_flag/get_config/get_experiment/get_killswitch, track, testing, OpenFeature.
 ---
 
 # Shipeasy Ruby SDK
 
 Server-side Ruby gem (`shipeasy-sdk`) for Shipeasy: feature gates, dynamic
-configs, kill switches, A/B experiments, metrics, and Rails i18n view helpers.
+configs, kill switches, A/B experiments, metrics, `see()` error reporting, and
+Rails i18n view helpers. Server-key only — never embed in a browser. Ruby 3.0+.
 
-## Install
+Two things only: **`Shipeasy.configure`** once at boot, then
+**`Shipeasy::Client.new(user)`** per request.
 
-```ruby
-# Gemfile
-gem "shipeasy-sdk"
-```
-
-```ruby
-require "shipeasy-sdk"
-```
+> **Pulling deeper docs.** Each section below links its full reference page and
+> copy-paste snippets — fetch any of them as raw Markdown when you need more than
+> this summary. Discover the whole tree from the manifest:
+> `https://shipeasy-ai.github.io/sdk-ruby/manifest.json` (lists every
+> `pages/<key>.md` and `snippets/<group>/<leaf>.md`). All URLs below are
+> `https://shipeasy-ai.github.io/sdk-ruby/…`.
 
 ## Configure once (boot)
 
@@ -33,35 +33,96 @@ Shipeasy.configure do |c|
 end
 ```
 
-`configure` builds the single global `Shipeasy::Engine`, registers it as
-`Shipeasy.engine`, and does a one-shot fetch. Call `Shipeasy.engine.init` for the
-background poll in long-running servers; use `Shipeasy::Engine.new(...).init_once`
-in serverless (no thread).
+Omit `c.attributes` if your user object is already the attribute hash. For a
+long-running server set `c.poll = true` to keep the blob fresh in the background;
+the default (one-shot fetch, no thread) is serverless-friendly.
 
-## Evaluate per user (bound Client — NO user arg)
+→ More: `pages/installation.md` (per-framework setup), `pages/configuration.md`
+(every option).
+
+## Evaluate (bound `Client.new(user)` — NO user arg)
+
+Bind the user once per request, then call without re-passing it — `track` and
+`log_exposure` are on the bound client too, so experiments are end-to-end here:
 
 ```ruby
 flags = Shipeasy::Client.new(current_user)   # runs the attributes transform once
 
-flags.get_flag("new_checkout")               # => true/false; default: only when unresolved
+flags.get_flag("new_checkout")               # bool; default: only when unresolved
 flags.get_config("button_color", default: "blue")
 flags.get_killswitch("payments")             # true = killed; optional switch_key
 result = flags.get_experiment("checkout_cta", { label: "Buy now" })
 # result.in_experiment / result.group / result.params
+
+flags.log_exposure("checkout_cta")           # at the decision point
+flags.track("purchase", { revenue: 49 })     # conversion / metric event
 ```
 
-`get_flag_detail` returns `.value` + `.reason` (`RULE_MATCH` / `DEFAULT` / `OFF` /
-`FLAG_NOT_FOUND` / `CLIENT_NOT_READY` / `OVERRIDE`).
+`get_flag_detail` returns a `FlagDetail` (`.value`, `.reason`: `RULE_MATCH`,
+`DEFAULT`, `OFF`, `OVERRIDE`, `FLAG_NOT_FOUND`, `CLIENT_NOT_READY`).
 
-The low-level Engine getters take the user explicitly:
-`Shipeasy.engine.get_flag("new_checkout", user)`.
+→ More: pages `pages/flags.md` · `pages/configs.md` · `pages/killswitches.md`
+(incl. named switches) · `pages/experiments.md`. Snippets
+`snippets/release/{flags,configs,killswitches,experiments}.md` and
+`snippets/metrics/track.md`.
 
-## Track conversions + manual exposure
+## Testing (no network)
+
+Use the `configure` siblings — seed overrides, read through the same `Client`:
 
 ```ruby
-Shipeasy.engine.track(current_user.id.to_s, "checkout_completed", { revenue: 49.99 })
-Shipeasy.engine.log_exposure(current_user.id.to_s, "checkout_cta")  # call when treatment shown
+Shipeasy.configure_for_testing(
+  flags:       { "new_checkout" => true },
+  configs:     { "billing_copy" => { "title" => "Welcome" } },
+  experiments: { "checkout_button" => ["treatment", { "color" => "green" }] },
+)
+Shipeasy::Client.new({ "user_id" => "u_123" }).get_flag("new_checkout") # => true
+
+# flip a value on the spot, mid-test:
+Shipeasy.override_flag("new_checkout", false)
+Shipeasy.clear_overrides
 ```
+
+Offline (real rules from a snapshot / file):
+
+```ruby
+Shipeasy.configure_for_offline(path: "snapshot.json")
+# or snapshot: { "flags" => {...}, "experiments" => {...} }, plus optional overrides
+```
+
+→ More: `pages/testing.md` (override helpers + a working example
+`shipeasy-snapshot.json`).
+
+## OpenFeature
+
+```ruby
+require "open_feature/sdk"          # optional dep: gem "openfeature-sdk" (Ruby ≥ 3.4)
+require "shipeasy/sdk/openfeature"
+
+Shipeasy.configure { |c| c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY"); c.poll = true }
+OpenFeature::SDK.configure { |c| c.set_provider(Shipeasy::OpenFeature::Provider.new) } # uses the global
+```
+
+Boolean → gate; string/number/object → config.
+
+→ More: `pages/openfeature.md` (reason mapping, type routing).
+
+## Error reporting — see()
+
+```ruby
+begin
+  charge_card(order)
+rescue => e
+  Shipeasy.see(e).causes_the("checkout").to("use the backup processor")
+end
+```
+
+`Shipeasy.see_violation(name)` for non-exception problems;
+`Shipeasy.control_flow_exception(e).because(...)` marks expected control flow
+(reports nothing).
+
+→ More: `pages/error-reporting.md` · snippets `snippets/ops/see.md`
+(`.extras`, violations, control-flow exceptions).
 
 ## i18n (Rails)
 
@@ -70,53 +131,18 @@ Shipeasy.engine.log_exposure(current_user.id.to_s, "checkout_cta")  # call when 
 <h1><%= i18n_t("hero.title", name: current_user.name) %></h1>
 ```
 
-## Error reporting — see()
+Outside Rails: `Shipeasy.i18n_script_tag(client_key, profile: "en:prod")` emits
+the loader tag (public client key).
 
-```ruby
-begin
-  charge_card(order)
-rescue => e
-  Shipeasy.engine.see(e).causes_the("checkout").to("use the backup processor")
-end
-```
+→ More: `pages/i18n.md` · snippets `snippets/i18n/{setup,render}.md`.
 
-`see_violation(name)` for non-exception problems; `control_flow_exception(e).because(...)`
-to mark expected control flow (reports nothing). Module facade:
-`Shipeasy::SDK.see(e)...`.
+## Other surfaces
 
-## Testing (zero network)
+- Anon bucketing: `Shipeasy::SDK::RackMiddleware` mints the shared `__se_anon_id`
+  cookie (Rails Railtie auto-mounts it); anonymous `get_flag` then just works.
+- `c.private_attributes = ["email"]` strips keys from outbound events.
+- `c.sticky_store = Shipeasy::SDK::InMemoryStickyStore.new` pins experiment assignment.
+- SSR: `Shipeasy.bootstrap_script_tag(user)` + `Shipeasy.i18n_script_tag(client_key, "en:prod")`.
+- `Shipeasy.on_change { ... }` (requires `c.poll = true`) fires after a poll fetches new data.
 
-```ruby
-client = Shipeasy::Engine.for_testing
-client.override_flag("new_checkout", true)
-client.get_flag("new_checkout", { user_id: "u_1" })   # => true
-client.override_config("button_color", "blue")
-client.override_experiment("checkout_cta", "treatment", { label: "Buy now" })
-client.clear_overrides
-
-# Stub the global engine so Shipeasy::Client picks it up:
-# allow(Shipeasy).to receive(:engine).and_return(client)
-```
-
-Offline snapshot: `Shipeasy::Engine.from_file("snapshot.json")` /
-`from_snapshot(flags:, experiments:)` — real evaluator, no network.
-
-## OpenFeature
-
-```ruby
-require "open_feature/sdk"          # optional dep: gem "openfeature-sdk"
-require "shipeasy/sdk/openfeature"
-
-engine = Shipeasy::Engine.new(api_key: ENV.fetch("SHIPEASY_SERVER_KEY"))
-engine.init
-OpenFeature::SDK.configure { |c| c.set_provider(Shipeasy::OpenFeature::Provider.new(engine)) }
-```
-
-Boolean → gate, string/number/object → dynamic config.
-
-## Advanced
-
-- `private_attributes: ["email"]` — strip keys from `track`/`see` egress.
-- `sticky_store: Shipeasy::SDK::InMemoryStickyStore.new` — pin experiment variants.
-- Anonymous traffic buckets on the `__se_anon_id` cookie (Rails Railtie auto-mounts
-  `Shipeasy::SDK::RackMiddleware`; mount it yourself in Sinatra/Hanami).
+→ More: `pages/advanced.md`.

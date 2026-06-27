@@ -25,8 +25,15 @@ Gem::Specification.new do |spec|
 
   spec.required_ruby_version = ">= 3.0"
 
-  spec.files         = Dir["lib/**/*.rb", "LICENSE", "README.md"]
+  # Ship the bundled agent skill (docs/skill/SKILL.md) so `shipeasy-skill
+  # install` can copy it with no network (read relative to lib/ at runtime).
+  spec.files         = Dir["lib/**/*.rb", "docs/skill/SKILL.md", "LICENSE", "README.md"]
   spec.require_paths = ["lib"]
+
+  # Opt-in installer for the bundled agent skill (no install-time hook):
+  #   shipeasy-skill install  →  .claude/skills/shipeasy-ruby/SKILL.md
+  spec.bindir      = "bin"
+  spec.executables = ["shipeasy-skill"]
 
   spec.add_development_dependency "rspec",   "~> 3.13"
   spec.add_development_dependency "rake",    "~> 13.0"

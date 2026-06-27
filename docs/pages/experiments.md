@@ -1,37 +1,26 @@
-# A/B experiments
+# A/B experiments — `get_experiment` + `track`
 
-Server-side experiment assignment + conversion tracking, evaluated locally.
+After [`Shipeasy.configure`](configuration.md), an experiment is **end-to-end
+through the bound `Shipeasy::Client.new(user)`** — read the assignment, log
+exposure, and track the conversion, all on the same handle, with no user
+argument.
 
-## Get the assignment
+## Reading an experiment
 
-### Bound Client form
+`get_experiment(name, default_params, decode = nil)` returns an
+`Eval::ExperimentResult` with three fields:
 
-`get_experiment(name, default_params, decode = nil)` — user bound at construction:
+- `result.in_experiment` — `true` if the user is enrolled (not in the holdout /
+  outside allocation).
+- `result.group` — the assigned variation group (e.g. `"control"` /
+  `"treatment"`).
+- `result.params` — the variant params; falls back to `default_params` when the
+  user isn't enrolled (or the experiment is absent).
 
 ```ruby
+# construct once per callsite (cheap; binds the user)
 flags = Shipeasy::Client.new(current_user)
 
-result = flags.get_experiment("checkout_cta", { label: "Buy now" })
-```
-
-### Engine form
-
-`get_experiment(name, user, default_params, decode = nil)`:
-
-```ruby
-Shipeasy.engine.get_experiment("checkout_cta", user, { label: "Buy now" })
-```
-
-## ExperimentResult shape
-
-Returns an `Eval::ExperimentResult` with:
-
-- `result.in_experiment` — `true` if the user is enrolled (not in the holdout / outside allocation).
-- `result.group` — the assigned group name (e.g. `"control"` / `"treatment"`).
-- `result.params` — the variant params. Falls back to `default_params` when the
-  user is not enrolled (or the experiment is absent).
-
-```ruby
 result = flags.get_experiment("checkout_cta", { label: "Buy now" })
 
 if result.in_experiment && result.group == "treatment"
@@ -42,20 +31,35 @@ end
 An optional `decode` proc projects the params for an enrolled user (a decode
 failure falls back to `control` + `default_params`).
 
-## Track a conversion ({{SUCCESS_EVENT}})
+## Logging exposure — `log_exposure`
 
-Conversions are recorded via the engine's `track` (fire-and-forget):
+The server is stateless and never auto-logs exposure. Call `log_exposure` at the
+point you actually present the treatment (parity with the browser's
+auto-exposure). The bound `Client` derives the user from the same bound
+attributes — no user argument:
 
 ```ruby
-Shipeasy.engine.track(current_user.id.to_s, "{{SUCCESS_EVENT}}", { revenue: 49.99 })
+result = flags.get_experiment("checkout_cta", { label: "Buy now" })
+flags.log_exposure("checkout_cta")   # at the decision point
 ```
 
-`track(user_id, event_name, props = {})` posts a metric event. Props are
-sanitized and respect the configured private-attribute list (see
-[advanced](advanced.md)).
+It re-evaluates and, if the bound user is enrolled, POSTs a single `exposure`
+event; otherwise it's a no-op (also a no-op under
+[`configure_for_testing` / `configure_for_offline`](testing.md)).
 
-## Exposure
+## Tracking conversion events — `track`
 
-The server is stateless and never auto-logs an exposure. When you actually
-present the treatment, call `log_exposure` to emit the exposure event — see
-[advanced](advanced.md#manual-exposure).
+Record a conversion/metric event for the experiment's success metric on the same
+bound `Client`, deriving the unit from the bound attributes (`user_id` else
+`anonymous_id`):
+
+```ruby
+flags.track("{{SUCCESS_EVENT}}", { revenue: 49.99 })
+```
+
+- `event_name` — your success-metric event, e.g. `{{SUCCESS_EVENT}}`.
+- `props` — optional event payload (any [private attributes](advanced.md) you
+  configured are stripped before the event leaves the process).
+
+`track` is fire-and-forget and a no-op in test/offline mode. If the bound
+attributes carry no `user_id` or `anonymous_id`, the call is a no-op.

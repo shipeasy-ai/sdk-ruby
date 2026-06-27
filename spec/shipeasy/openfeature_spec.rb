@@ -42,6 +42,26 @@ RSpec.describe "Shipeasy::OpenFeature::Provider", if: openfeature_available do
     end
   end
 
+  describe "global form (no-arg constructor)" do
+    after { Shipeasy.reset_config! }
+
+    it "resolves the engine configured via Shipeasy.configure_for_testing" do
+      Shipeasy.configure_for_testing(flags: { "new_checkout" => true })
+      global = Shipeasy::OpenFeature::Provider.new   # no engine handle
+      res = global.fetch_boolean_value(
+        flag_key: "new_checkout", default_value: false,
+        evaluation_context: ctx(targeting_key: "u_1"),
+      )
+      expect(res.value).to eq(true)
+    end
+
+    it "raises a helpful error when no global engine is configured" do
+      Shipeasy.reset_config!
+      expect { Shipeasy::OpenFeature::Provider.new }
+        .to raise_error(Shipeasy::Error, /configure/)
+    end
+  end
+
   describe "#fetch_boolean_value" do
     it "resolves an enabled flag (override) as TARGETING_MATCH" do
       client.override_flag("new_checkout", true)

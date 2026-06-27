@@ -1,8 +1,10 @@
 # Installation & configuration
 
-This page is the canonical home for installing the gem and calling
-`Shipeasy.configure`. Snippets elsewhere assume `configure` already ran here at
-boot.
+This is the canonical home for **install + `Shipeasy.configure`**. Snippets
+elsewhere assume `configure` already ran at boot; this page is where it lives.
+
+This is a **server** SDK: it authenticates with your **server key** and must
+never be embedded in a browser.
 
 ## Add the gem
 
@@ -21,10 +23,15 @@ Or without Bundler:
 gem install shipeasy-sdk
 ```
 
-The gem is pure Ruby (no native extensions) and runs on a modern MRI release.
-Rails is **optional** — when Rails is loaded the gem auto-mounts a Railtie that
-registers the i18n view helpers and the anon-id Rack middleware. Outside Rails
-(Sinatra / Hanami / scripts) it pulls in no web framework.
+The gem is pure Ruby (no native extensions) and runs on Ruby 3.0+. Rails is
+**optional** — when Rails is loaded the gem auto-mounts a Railtie that registers
+the i18n view helpers and the anon-id Rack middleware. Outside Rails (Sinatra /
+Hanami / scripts) it pulls in no web framework.
+
+### Optional: OpenFeature
+
+The OpenFeature provider needs the `openfeature-sdk` gem (Ruby ≥ 3.4). Add it
+only if you use `Shipeasy::OpenFeature::Provider` — see [openfeature](openfeature.md).
 
 ## Keys
 
@@ -35,64 +42,87 @@ registers the i18n view helpers and the anon-id Rack middleware. Outside Rails
 
 The SDK reads no env vars itself — you wire them through `configure`.
 
-## `Shipeasy.configure` — once at boot
+## `Shipeasy.configure` — once per process
 
-Configure the gem **once** at startup. `Shipeasy.configure` populates the shared
-`Shipeasy::Configuration`, builds + registers the single global `Shipeasy::Engine`
-(first-config-wins), and kicks off a one-shot fetch (fire-and-forget). After it
-runs you construct a cheap, user-bound `Shipeasy::Client.new(user)` per request —
-the bound client never opens its own connection, fetches, or polls.
+Call `Shipeasy.configure` **once** at startup, then construct a cheap,
+user-bound `Shipeasy::Client.new(user)` per request — every read takes **no user
+argument** because the user is bound at construction.
 
 ```ruby
 Shipeasy.configure do |c|
-  c.api_key    = ENV.fetch("SHIPEASY_SERVER_KEY")   # required — server key
+  c.api_key    = ENV.fetch("SHIPEASY_SERVER_KEY")   # required — server key, never a browser
 
   # Optional: map YOUR user object → the Shipeasy attribute hash. Runs once,
   # in the Shipeasy::Client constructor. Omit it and the object you pass to
   # Shipeasy::Client.new IS the attribute hash (identity default).
   c.attributes = ->(u) { { "user_id" => u.id, "plan" => u.plan } }
 
-  c.base_url   = "https://edge.shipeasy.dev"        # optional — override for local/staging
-
-  # i18n view helpers only (see below + the i18n page):
+  # i18n view helpers only (see the i18n page):
   c.public_key = ENV.fetch("SHIPEASY_CLIENT_KEY")   # public client key
   c.profile    = "default"                          # i18n locale profile
 end
 ```
 
-### configure parameters
+- **`c.api_key`** *(required)* — your Shipeasy **server key**. Authenticates
+  flags, configs, kill switches and experiments. Read it from the environment;
+  never hard-code it.
+- **`c.attributes`** *(optional)* — a transform from YOUR user object to the
+  Shipeasy attribute hash that targeting evaluates against. The default is
+  identity, so if your user object is already that hash you can omit it:
 
-| Parameter    | Default                       | Description |
-| ------------ | ----------------------------- | ----------- |
-| `api_key`    | (required)                    | Server SDK key. Authenticates evaluation + ingestion. |
-| `base_url`   | `https://edge.shipeasy.dev`   | Override for local dev / staging. |
-| `attributes` | identity (`->(u) { u }`)      | Callable mapping your user object → the Shipeasy attribute hash. Runs once, in the `Shipeasy::Client` constructor. |
-| `public_key` | (none)                        | Public client key — for the i18n view helpers / loader tag only. |
-| `profile`    | `"default"`                   | i18n locale profile read by the view helpers. |
+  ```ruby
+  Shipeasy::Client.new({ "user_id" => "u_1", "plan" => "pro" }).get_flag("new_checkout")
+  ```
 
-### The `attributes` transform
+### One-shot vs background poll
 
-The transform runs **once**, in the `Shipeasy::Client` constructor, against the
-raw user object you pass. The result is the attribute hash every getter on that
-client evaluates against. With no transform, the hash you pass in IS the
-attribute map:
+`configure` is first-config-wins: the first call wires everything up; later calls
+are a no-op.
+
+- **default (`c.init = true`)** — fire a one-shot fetch fire-and-forget so the
+  first `Shipeasy::Client.new(user).get_flag(...)` resolves against real rules.
+  Ideal for serverless / short-lived processes — no poll thread is spawned.
+- **`c.poll = true`** — for a long-running server, start the **background poll**
+  (initial fetch + periodic refresh, 30 s default / `X-Poll-Interval` header) so
+  flags stay fresh without a redeploy. Configuration owns the lifecycle:
+
+  ```ruby
+  Shipeasy.configure { |c| c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY"); c.poll = true }
+  ```
+
+### `configure` options
+
+| option | default | what it does |
+| --- | --- | --- |
+| `api_key` | (required) | Server SDK key. Authenticates evaluation + ingestion. |
+| `attributes` | identity | Callable mapping your user object → the Shipeasy attribute hash. |
+| `init` | `true` | Fire the one-shot fetch fire-and-forget. |
+| `poll` | `false` | Start the background poll (refreshes the blob over time). |
+| `base_url` | `https://edge.shipeasy.dev` | API base URL for the blobs. Override for local dev / staging. |
+| `env` | `"prod"` | Deployment environment tag, attached to `see()` events + usage telemetry. |
+| `disable_telemetry` | `false` | Opt out of per-evaluation usage telemetry. Evaluation itself is unaffected. |
+| `telemetry_url` | built-in | Override the telemetry endpoint (rarely needed). |
+| `private_attributes` | `nil` | Attribute keys stripped from every outbound event before it leaves the process. They still drive **targeting** locally. See [advanced](advanced.md). |
+| `sticky_store` | `nil` | Pin a user's experiment group across re-buckets. See [advanced](advanced.md). |
+| `public_key` | (none) | Public client key — for the i18n view helpers / loader tag only. |
+| `profile` | `"default"` | i18n locale profile read by the view helpers. |
 
 ```ruby
-Shipeasy::Client.new({ "user_id" => "u_1", "plan" => "pro" }).get_flag("new_checkout")
+# example: staging env, telemetry off, redact `email`, background poll
+Shipeasy.configure do |c|
+  c.api_key            = ENV.fetch("SHIPEASY_SERVER_KEY")
+  c.env                = "staging"
+  c.disable_telemetry  = true
+  c.private_attributes = ["email", "ip"]
+  c.poll               = true
+end
 ```
 
-### init / poll vs one-shot
-
-`configure` does a one-shot fetch only. For a long-running server you usually
-want the background poll thread (30s default, overridden by the
-`X-Poll-Interval` response header):
-
-```ruby
-Shipeasy.engine.init    # starts the background poll thread
-```
-
-For serverless / short-lived functions, skip the poll thread and do a single
-synchronous fetch (see **Serverless** below).
+**Identity default.** The attribute hash you produce is the unit of identity —
+supply `user_id` for logged-in users, or let the anon-id middleware (below)
+inject `anonymous_id` for logged-out traffic. An explicit `user_id` /
+`anonymous_id` always wins. Constructing `Shipeasy::Client.new(user)` before
+`configure` raises `Shipeasy::Error`.
 
 ---
 
@@ -106,13 +136,11 @@ Bundler requires the gem automatically; you only need an initializer that calls
 Shipeasy.configure do |c|
   c.api_key    = ENV.fetch("SHIPEASY_SERVER_KEY")
   c.attributes = ->(u) { { "user_id" => u.id, "plan" => u.plan } }
+  c.poll       = true                              # background poll for a persistent server
 
   c.public_key = ENV.fetch("SHIPEASY_CLIENT_KEY")  # for i18n view helpers
   c.profile    = "default"
 end
-
-# Start the background poll for a persistent server:
-Shipeasy.engine.init
 ```
 
 Then in a controller / anywhere per request:
@@ -134,13 +162,12 @@ extra wiring. In a Rails view:
 ## Sinatra / Hanami / bare Rack
 
 No Railtie here, so configure in your app file and mount the anon-id middleware
-yourself if you want zero-config anonymous bucketing.
+yourself for zero-config anonymous bucketing.
 
 ```ruby
 require "shipeasy-sdk"
 
-Shipeasy.configure { |c| c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY") }
-Shipeasy.engine.init                    # background poll for a long-running server
+Shipeasy.configure { |c| c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY"); c.poll = true }
 
 class App < Sinatra::Base
   use Shipeasy::SDK::RackMiddleware     # mints __se_anon_id for logged-out traffic
@@ -170,15 +197,30 @@ Shipeasy::Client.new({ "user_id" => "u_1" }).get_flag("new_checkout")
 
 ## Serverless / Lambda / Cloud Run
 
-Skip the auto-init facade — it spawns a poll thread you don't want in a
-short-lived function. Build the engine explicitly and do a single synchronous
-fetch with `init_once` (no poll thread):
+The default `configure` (one-shot fetch, no poll thread) is already
+serverless-friendly: the fetch is fire-and-forget and no background thread is
+spawned. Just leave `c.poll` off (its default).
 
 ```ruby
-engine = Shipeasy::Engine.new(api_key: ENV.fetch("SHIPEASY_SERVER_KEY"))
-engine.init_once
-engine.get_flag("new_checkout", user)
+Shipeasy.configure { |c| c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY") }   # c.poll defaults to false
+Shipeasy::Client.new(user).get_flag("new_checkout")
 ```
+
+## Tests and offline
+
+For unit tests and offline evaluation, swap `configure` for one of its drop-in
+siblings — no api key, no network — then read through the same
+`Shipeasy::Client.new(user)`:
+
+```ruby
+# unit tests: seed values, zero network
+Shipeasy.configure_for_testing(flags: { "new_checkout" => true })
+
+# offline: evaluate the real rules from a snapshot / file
+Shipeasy.configure_for_offline(path: "shipeasy-snapshot.json")
+```
+
+See [testing](testing.md) for the full override args.
 
 Next: [configuration deep-dive](configuration.md) · [flags](flags.md) ·
 [experiments](experiments.md) · [i18n](i18n.md).

@@ -18,5 +18,5 @@ key (never the server key):
 #   client_key — the PUBLIC client key
 #   profile    — locale profile to load
 #   base_url   — CDN override (defaults to https://cdn.shipeasy.ai)
-tag = Shipeasy.engine.i18n_script_tag(ENV.fetch("SHIPEASY_CLIENT_KEY"), profile: "{{PROFILE}}")
+tag = Shipeasy.i18n_script_tag(ENV.fetch("SHIPEASY_CLIENT_KEY"), profile: "{{PROFILE}}")
 ```

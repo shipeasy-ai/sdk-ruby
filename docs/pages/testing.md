@@ -1,82 +1,147 @@
 # Testing
 
-For unit/integration tests build a client that does **zero network** and returns
-exactly the values you seed — no api_key, no fetch, no poll thread, no
-telemetry, no metric ingestion.
-
-## `for_testing` + `override_*`
+Use **`Shipeasy.configure_for_testing`** — the test-mode sibling of
+[`Shipeasy.configure`](configuration.md). It does **zero network**, needs no api
+key, and seeds the values your code under test should see via override arguments.
+Then read through the ordinary `Shipeasy::Client.new(user)` — the *same* call
+your production code uses.
 
 ```ruby
 require "shipeasy-sdk"
 
-client = Shipeasy::Engine.for_testing
-# init / init_once are no-ops here — nothing is ever fetched.
+Shipeasy.configure_for_testing(
+  flags:       { "new_checkout" => true },
+  configs:     { "billing_copy" => { "title" => "Welcome" } },
+  experiments: { "checkout_button" => ["treatment", { "color" => "green" }] },
+)
 
-# Flags (boolean)
-client.override_flag("new_checkout", true)
-client.get_flag("new_checkout", { user_id: "u_1" })          # => true
+# construct once per callsite (cheap; binds the user)
+client = Shipeasy::Client.new({ "user_id" => "u_123" })
 
-# Configs (any value; an optional decode proc still runs)
-client.override_config("button_color", "blue")
-client.get_config("button_color")                            # => "blue"
-client.override_config("limits", { "max" => 10 })
-client.get_config("limits", ->(v) { v["max"] })              # => 10
+client.get_flag("new_checkout")              # => true
+client.get_config("billing_copy")            # => { "title" => "Welcome" }
 
-# Experiments — returns an in-experiment Eval::ExperimentResult
-client.override_experiment("checkout_cta", "treatment", { label: "Buy now" })
-r = client.get_experiment("checkout_cta", { user_id: "u_1" }, { label: "default" })
-r.in_experiment   # => true
-r.group           # => "treatment"
-r.params          # => { label: "Buy now" }
+result = client.get_experiment("checkout_button", { "color" => "blue" })
+result.in_experiment                         # => true
+result.group                                 # => "treatment"
+result.params                                # => { "color" => "green" }
 
-# track is a no-op (no thread, no network) — assert call counts without stubbing.
-client.track("u_1", "checkout_completed", { revenue: 49.99 })  # => nil
-
-# Reset between examples
-client.clear_overrides
+# track / log_exposure are no-ops in test mode — safe to call, send nothing
+client.track("purchase", { amount: 49 })
 ```
 
-An override always wins over the fetched blob, so the same
-`override_flag` / `override_config` / `override_experiment` / `clear_overrides`
-setters also pin a value on a **normal** live engine
-(`Shipeasy::Engine.new(...)`) for local development.
+Override argument shapes:
 
-## Stubbing the global engine / bound Client
+- `flags` — `{ name => bool }` forced `get_flag` results.
+- `configs` — `{ name => value }` forced `get_config` results (a `decode` still applies).
+- `experiments` — `{ name => [group, params] }` forced enrolments.
 
-`Shipeasy.engine` and the legacy `Shipeasy.flags` both fetch over the network, so
-in tests stub them to a `for_testing` engine. `Shipeasy::Client.new(user)` reads
-`Shipeasy.engine`, so stubbing the engine covers the bound-client path too:
+`configure_for_testing` **replaces** any previously-configured engine, so each
+test can reconfigure freely (no reset boilerplate, unlike `configure`'s
+first-config-wins).
+
+## Quick overrides on the spot
+
+Seeding up front isn't always enough — sometimes you want to flip one value
+*mid-test*. The package-level override helpers do exactly that, layered on top of
+whatever `configure_for_testing` / `configure_for_offline` (or even a live
+`configure`) set up. They win until `clear_overrides`:
 
 ```ruby
-# RSpec
-before do
-  test_engine = Shipeasy::Engine.for_testing
-  test_engine.override_flag("new_checkout", true)
-  allow(Shipeasy).to receive(:engine).and_return(test_engine)
-  allow(Shipeasy).to receive(:flags).and_return(test_engine) # legacy path
+Shipeasy.configure_for_testing(flags: { "new_checkout" => true })
 
-  # Shipeasy::Client.new(user).get_flag("new_checkout") now => true
-end
+# …later, in one test, flip values without reconfiguring:
+Shipeasy.override_flag("new_checkout", false)               # name, value
+Shipeasy.override_config("billing_copy", { "title" => "B" }) # name, value
+Shipeasy.override_experiment("checkout_button", "control", { "color" => "blue" })
+
+Shipeasy::Client.new({ "user_id" => "u_1" }).get_flag("new_checkout")  # => false
+
+Shipeasy.clear_overrides   # drop every on-the-spot override
 ```
 
-## Offline snapshot (real evaluator, no network)
+| helper | effect |
+| --- | --- |
+| `Shipeasy.override_flag(name, value)` | force `get_flag(name)` → `value` |
+| `Shipeasy.override_config(name, value)` | force `get_config(name)` → `value` |
+| `Shipeasy.override_experiment(name, group, params)` | force enrolment in `group` with `params` |
+| `Shipeasy.clear_overrides` | drop all of the above |
 
-Reproduce a production decision from a captured blob. The snapshot JSON holds the
-raw response bodies of the two SDK endpoints:
+(These require a prior `configure*` call — they raise `Shipeasy::Error` otherwise.)
+
+`clear_overrides` drops **every** override — including the values you passed to
+`configure_for_testing` (which seeds through the same mechanism, and test mode has
+no blob underneath). Under `configure_for_offline` it instead reverts to the
+snapshot. To get a clean known state, call `configure_for_testing(...)` again.
+
+## Offline snapshot
+
+Use **`Shipeasy.configure_for_offline`** to run fully offline against a real blob
+— evaluations run the **real** eval logic (targeting, rollout, bucketing), no
+network is touched, and the override args still apply on top:
+
+```ruby
+Shipeasy.configure_for_offline(path: "shipeasy-snapshot.json")
+
+client = Shipeasy::Client.new({ "user_id" => "u_123" })
+client.get_flag("new_checkout")
+```
+
+### A snapshot file that works
+
+A snapshot is
+`{ "flags": <body of /sdk/flags>, "experiments": <body of /sdk/experiments> }`.
+The shapes are name-keyed maps. Save this as `shipeasy-snapshot.json` — it
+evaluates exactly as written:
 
 ```json
-{ "flags": <body of /sdk/flags>, "experiments": <body of /sdk/experiments> }
+{
+  "flags": {
+    "gates": {
+      "new_checkout": { "enabled": true, "rolloutPct": 10000, "salt": "new_checkout", "rules": [] },
+      "beta_banner":  { "enabled": false, "rolloutPct": 0, "salt": "beta_banner", "rules": [] }
+    },
+    "configs": {
+      "billing_copy": { "value": { "title": "Welcome back", "cta": "Upgrade" } },
+      "upload_limits": { "value": { "max_mb": 50 } }
+    },
+    "killswitches": {
+      "payments_circuit_breaker": { "killed": false }
+    }
+  },
+  "experiments": { "experiments": {}, "universes": {} }
+}
 ```
+
+- A gate is `{ "enabled", "rolloutPct" (0–10000, basis points), "salt", "rules": [] }`.
+  `rolloutPct: 10000` = 100% on; `0` = off for everyone. Add targeting under `rules`.
+- A config is `{ "value": <any JSON> }`; `get_config("billing_copy")` returns that `value`.
+- A kill switch is `{ "killed": <bool>, "switches"?: { ... } }`.
+- Leave `experiments` as `{ "experiments": {}, "universes": {} }` if you have none
+  (or paste a real `/sdk/experiments` body).
 
 ```ruby
-client = Shipeasy::Engine.from_file("snapshot.json")
-# or, from already-parsed blobs:
-client = Shipeasy::Engine.from_snapshot(flags: flags_body, experiments: exps_body)
-
-client.get_flag("new_checkout", user)          # real evaluation, no network
-client.get_experiment("checkout_cta", user, {})
+Shipeasy.configure_for_offline(path: "shipeasy-snapshot.json")
+c = Shipeasy::Client.new({ "user_id" => "u_1" })
+c.get_flag("new_checkout")                              # => true  (100% rollout)
+c.get_flag("beta_banner")                              # => false (0% rollout)
+c.get_config("billing_copy")["cta"]                    # => "Upgrade"
+c.get_config("upload_limits", ->(v) { v["max_mb"] })   # => 50
+c.get_killswitch("payments_circuit_breaker")           # => false
 ```
 
-`init` / `init_once` / `track` are no-ops and telemetry is off (it reuses the
-`for_testing` plumbing). Local `override_*` setters still apply on top of the
-snapshot.
+You can also pass the same structure inline as `snapshot:` instead of a file,
+and layer overrides on top:
+
+```ruby
+Shipeasy.configure_for_offline(
+  snapshot: { "flags" => { "gates" => {}, "configs" => {} }, "experiments" => {} },
+  flags:    { "new_checkout" => true },   # same override args as configure_for_testing
+)
+```
+
+> **Tip:** to capture a real production snapshot, save the bodies of the
+> `GET /sdk/flags` and `GET /sdk/experiments` responses under those two keys.
+
+Both helpers take the same `attributes:` transform as `configure`, so your
+user-object mapping is exercised in tests exactly as in production.

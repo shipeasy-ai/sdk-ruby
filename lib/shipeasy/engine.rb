@@ -90,15 +90,19 @@ module Shipeasy
 
       # Build a no-network, immediately-usable client for tests. Telemetry is
       # disabled, init/init_once/track are no-ops (never fetch), and no api_key
-      # is required. Seed it with override_flag / override_config /
+      # is required. The client is immediately READY against an empty blob (so a
+      # missing gate resolves FLAG_NOT_FOUND, not CLIENT_NOT_READY — parity with
+      # the other SDKs). Seed it with override_flag / override_config /
       # override_experiment, then call the normal getters.
       def self.for_testing(env: "prod")
-        new(
+        client = new(
           api_key: "test",
           env: env,
           disable_telemetry: true,
           test_mode: true,
         )
+        client.send(:load_snapshot, {}, {})
+        client
       end
 
       # Build an offline client from a JSON snapshot file. The file holds the
@@ -300,17 +304,21 @@ module Shipeasy
 
       # Read a killswitch from the cached flags blob. Without +switch_key+,
       # returns true when the whole killswitch is killed. With +switch_key+,
-      # returns true when that specific per-key switch is on. Unknown
-      # killswitches / switches return false. Not user-scoped.
+      # returns true when that specific named per-key switch is on — and when
+      # the key isn't configured on the killswitch, FALLS BACK to the top-level
+      # value (so an unconfigured key behaves exactly like the no-key call).
+      # Unknown killswitches return false. Not user-scoped.
       def get_killswitch(name, switch_key = nil)
         @telemetry.emit("ks", name)
         ks = @mutex.synchronize { @flags_blob&.dig("killswitches", name.to_s) }
         return false unless ks
-        if switch_key.nil?
-          Eval.enabled?(ks["killed"])
-        else
-          Eval.enabled?(ks.dig("switches", switch_key.to_s))
+        unless switch_key.nil?
+          switches = ks["switches"] || {}
+          key = switch_key.to_s
+          return Eval.enabled?(switches[key]) if switches.key?(key)
+          # key not configured → fall through to the top-level value
         end
+        Eval.enabled?(ks["killed"])
       end
 
       # Batch-evaluate every loaded gate, config and experiment for +user+ into

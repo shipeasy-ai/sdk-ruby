@@ -7,3 +7,8 @@ begin
 rescue LoadError
   # rspec not installed (e.g. production install) — leave default empty.
 end
+
+desc "Regenerate README.md from docs/ (single source of truth)"
+task :readme do
+  ruby File.expand_path("scripts/gen_readme.rb", __dir__)
+end
