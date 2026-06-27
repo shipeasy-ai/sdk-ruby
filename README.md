@@ -12,6 +12,9 @@ gate evaluation, runtime configs, experiments, and metric ingestion.
 gem "shipeasy-sdk"
 ```
 
+📖 [Installation & configuration](docs/pages/installation.md) — install + wiring
+for Rails, Sinatra, plain Ruby, and serverless · [full docs](docs/).
+
 ## Quickstart (Rails)
 
 Two parts: **configure once** at boot, then build a **user-bound
