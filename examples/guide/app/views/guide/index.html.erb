@@ -1,0 +1,43 @@
+<main class="page">
+  <header class="hero">
+    <h1 class="hero__title">Shipeasy · Ruby Entity Guide</h1>
+    <p class="hero__subtitle">
+      One card per Shipeasy entity — what it is, the SDK call that produces it, and its current value.
+    </p>
+
+    <div class="banner" role="status">
+      ⚠ SDK not wired yet — every value below is a placeholder.
+      Install <code>shipeasy-sdk</code> and replace the TODOs to make them live.
+    </div>
+  </header>
+
+  <section class="cards">
+    <% @entities.each do |e| %>
+      <article class="card" style="--accent: <%= e[:accent] %>;">
+        <div class="card__top">
+          <span class="pill pill--kind"><%= e[:kind].upcase %></span>
+          <span class="pill pill--value"><%= e[:value] %></span>
+        </div>
+
+        <h2 class="card__key"><%= e[:key] %></h2>
+        <p class="card__what"><%= e[:what] %></p>
+
+        <pre class="code"><code># TODO: once shipeasy-sdk is installed
+<%= e[:call] %></code></pre>
+
+        <% if e[:meta].present? %>
+          <p class="card__meta"><%= e[:meta] %></p>
+        <% end %>
+      </article>
+    <% end %>
+  </section>
+
+  <footer class="footer">
+    <p class="footer__run">
+      Run: <code>bundle install &amp;&amp; bin/rails server</code> → <code>http://localhost:3000</code>
+    </p>
+    <p class="footer__docs">
+      Docs: <a href="https://docs.shipeasy.ai">https://docs.shipeasy.ai</a>
+    </p>
+  </footer>
+</main>

@@ -1,0 +1,25 @@
+source "https://rubygems.org"
+
+# Minimal Rails 7 app for the Shipeasy "entity guide" example.
+#
+# NOTE: the `shipeasy-sdk` gem is intentionally NOT listed here. This example
+# boots with every value hardcoded as a placeholder. The user runs the install
+# flow later and adds the gem + replaces the `# TODO` blocks in the controller.
+#
+#   gem "shipeasy-sdk"   # <- add this once you wire the SDK in
+
+ruby ">= 3.1"
+
+gem "rails", "~> 7.1"
+gem "puma", ">= 5.0"
+
+# This example deliberately has no database / Active Record.
+
+# The SDK under test, resolved from the local gem checkout (../../ is the gem
+# root, where shipeasy-sdk.gemspec lives). Scoped to development/test so the
+# placeholder-only example still boots without it for a plain `bin/rails server`
+# demo, while `bin/rails test` can exercise the testing API. Swap this for
+# `gem "shipeasy-sdk"` (RubyGems) once you wire the SDK into the controller.
+group :development, :test do
+  gem "shipeasy-sdk", path: "../../"
+end

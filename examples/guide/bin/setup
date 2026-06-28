@@ -1,0 +1,16 @@
+#!/usr/bin/env ruby
+require "fileutils"
+
+APP_ROOT = File.expand_path("..", __dir__)
+
+FileUtils.chdir(APP_ROOT) do
+  puts "== Installing dependencies =="
+  system!("gem install bundler --conservative")
+  system!("bundle check") || system!("bundle install")
+
+  puts "\n== Done! Run `bin/rails server` and open http://localhost:3000 =="
+end
+
+def system!(*args)
+  system(*args, exception: true)
+end

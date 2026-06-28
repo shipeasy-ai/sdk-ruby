@@ -1,0 +1,16 @@
+# Rails runtime / generated files — none of these belong in the repo.
+/.bundle
+/log/*
+!/log/.keep
+/tmp/*
+!/tmp/.keep
+/storage/*
+!/storage/.keep
+
+# Bundler
+/vendor/bundle
+Gemfile.lock
+
+# OS / editor cruft
+.DS_Store
+*.swp

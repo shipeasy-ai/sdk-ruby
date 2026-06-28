@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shipeasy · Ruby Entity Guide</title>
+    <%#
+      TODO: once shipeasy-sdk is installed, emit the i18n head tags here:
+        <%= i18n_head_tags %>
+    %>
+    <%#
+      We inline the stylesheet so the example boots with NO asset pipeline gem
+      (propshaft/sprockets) and NO network calls. The source of truth is
+      app/assets/stylesheets/guide.css.
+    %>
+    <style><%= Rails.root.join("app/assets/stylesheets/guide.css").read.html_safe %></style>
+  </head>
+  <body>
+    <%= yield %>
+  </body>
+</html>
