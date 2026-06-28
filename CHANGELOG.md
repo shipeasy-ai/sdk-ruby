@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.2.0 (2026-06-28)
+
+**Rails generator — `rails generate shipeasy:install`.** Scaffolds Shipeasy into
+a Rails app the Rails way instead of pasting an initializer from the docs.
+
+- **`rails generate shipeasy:install`** writes `config/initializers/shipeasy.rb`
+  with the single `Shipeasy.configure` call (server key from the environment,
+  background poll on by default), then prints the keys / Rails-credentials next
+  steps. The gem's Railties already mount the anon-id Rack middleware and the
+  i18n view helpers, so the generator only creates what the app must own.
+- **`--i18n`** also sets the public client key in the initializer and injects
+  `<%= i18n_head_tags %>` into `app/views/layouts/application.html.erb` (before
+  `</head>`; idempotent, skips cleanly when the layout is missing or already
+  wired).
+- **`--no-poll`** generates a serverless one-shot-fetch initializer instead of
+  the background poll.
+- Generator templates (`initializer.rb.tt`, `USAGE`) are now packaged in the gem
+  (`lib/generators/**/*`) so the generator works from the installed gem.
+
 ## 2.1.0 (2026-06-27)
 
 **Uniform SDK DX standard (experiment-platform doc 23) — parity with the Python

@@ -1,0 +1,24 @@
+Description:
+    Install Shipeasy into a Rails app. Creates the config/initializers/shipeasy.rb
+    initializer that calls `Shipeasy.configure` once at boot. With --i18n it also
+    sets the public client key and injects `<%= i18n_head_tags %>` into your
+    application layout's <head>.
+
+    The gem's Railties already auto-mount the anon-id Rack middleware and the i18n
+    view helpers, so this generator only creates what your app must own — the
+    initializer, the (optional) layout tag, and a reminder to set your keys.
+
+Example:
+    rails generate shipeasy:install
+
+        Creates:
+            config/initializers/shipeasy.rb   (server key + background poll)
+
+    rails generate shipeasy:install --i18n
+
+        Also sets the public client key in the initializer and injects
+        <%= i18n_head_tags %> into app/views/layouts/application.html.erb
+
+    rails generate shipeasy:install --no-poll
+
+        One-shot fetch instead of the background poll (serverless / Lambda).

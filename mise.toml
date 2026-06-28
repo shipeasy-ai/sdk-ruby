@@ -1,0 +1,23 @@
+# Pin the Ruby used to develop and test this gem.
+#
+# The host's system Ruby is 2.6, too old to `bundle install` (and below the
+# gem's own `required_ruby_version >= 3.0`). This pins a modern Ruby provided by
+# mise so the suite — including the Rails generator spec (railties + ammeter) —
+# runs out of the box:
+#
+#   mise install      # ensure the version below is present
+#   bundle install
+#   bundle exec rspec
+#
+# CI runs the suite on Ruby 3.0–3.4 (see .github/workflows/test.yml); this local
+# pin is just the newest available and is a superset smoke of that matrix.
+[tools]
+ruby = "4.0.2"
+
+[tasks.test]
+description = "Run the RSpec suite"
+run = "bundle exec rspec"
+
+[tasks.readme]
+description = "Regenerate README.md from docs/"
+run = "ruby scripts/gen_readme.rb"

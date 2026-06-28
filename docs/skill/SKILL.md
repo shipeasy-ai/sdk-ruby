@@ -37,8 +37,12 @@ Omit `c.attributes` if your user object is already the attribute hash. For a
 long-running server set `c.poll = true` to keep the blob fresh in the background;
 the default (one-shot fetch, no thread) is serverless-friendly.
 
-→ More: `pages/installation.md` (per-framework setup), `pages/configuration.md`
-(every option).
+**Rails:** don't write the initializer by hand — run the generator:
+`bin/rails generate shipeasy:install` (add `--i18n` to also inject
+`<%= i18n_head_tags %>` into the app layout, `--no-poll` for serverless).
+
+→ More: `pages/installation.md` (per-framework setup + generator),
+`pages/configuration.md` (every option).
 
 ## Evaluate (bound `Client.new(user)` — NO user arg)
 

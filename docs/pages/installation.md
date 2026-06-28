@@ -128,8 +128,34 @@ inject `anonymous_id` for logged-out traffic. An explicit `user_id` /
 
 ## Rails
 
-Bundler requires the gem automatically; you only need an initializer that calls
-`Shipeasy.configure`.
+### Generator (recommended)
+
+The gem ships a Rails generator that scaffolds the install for you:
+
+```sh
+bin/rails generate shipeasy:install
+```
+
+It creates `config/initializers/shipeasy.rb` (server key from the environment,
+background poll on), then prints the keys / Rails-credentials next steps. Add
+`--i18n` to also set the public client key **and** inject `<%= i18n_head_tags %>`
+into your application layout's `<head>`; add `--no-poll` for a serverless
+one-shot fetch:
+
+```sh
+bin/rails generate shipeasy:install --i18n      # also wires the i18n view helpers
+bin/rails generate shipeasy:install --no-poll   # serverless one-shot fetch
+```
+
+You never wire middleware by hand — the gem's Railties already mount the anon-id
+Rack middleware and the i18n view helpers. The generator only creates what your
+app owns: the initializer, the (optional) layout tag, and a reminder to set your
+keys.
+
+### Manual
+
+Or write the initializer yourself — Bundler requires the gem automatically, so
+all you need is an initializer that calls `Shipeasy.configure`:
 
 ```ruby
 # config/initializers/shipeasy.rb

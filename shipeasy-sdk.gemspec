@@ -27,7 +27,15 @@ Gem::Specification.new do |spec|
 
   # Ship the bundled agent skill (docs/skill/SKILL.md) so `shipeasy-skill
   # install` can copy it with no network (read relative to lib/ at runtime).
-  spec.files         = Dir["lib/**/*.rb", "docs/skill/SKILL.md", "LICENSE", "README.md"]
+  # `lib/generators/**/*` is globbed separately from `lib/**/*.rb` because the
+  # Rails generator ships non-.rb assets — its template (initializer.rb.tt) and
+  # USAGE — which `lib/**/*.rb` would drop, leaving `rails generate
+  # shipeasy:install` unable to find its template in the installed gem.
+  spec.files = (
+    Dir["lib/**/*.rb"] +
+    Dir["lib/generators/**/*"] +
+    ["docs/skill/SKILL.md", "LICENSE", "README.md"]
+  ).uniq
   spec.require_paths = ["lib"]
 
   # Opt-in installer for the bundled agent skill (no install-time hook):
@@ -38,6 +46,12 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rspec",   "~> 3.13"
   spec.add_development_dependency "rake",    "~> 13.0"
   spec.add_development_dependency "rubocop", "~> 1.71"
+  # Exercise the Rails generator (`rails generate shipeasy:install`) under test.
+  # railties (not full Rails) is all the generator needs — the spec drives the
+  # generator directly against a throwaway destination, so we avoid the fragile
+  # ammeter / rspec-rails ↔ actionview version coupling. `~> 7.1` keeps Ruby 3.0
+  # green (bundler resolves 7.1.x there; newer Rubies pick 7.2.x) — both fine.
+  spec.add_development_dependency "railties", "~> 7.1"
   # Optional integration: `Shipeasy::OpenFeature::Provider` adapts FlagsClient to
   # the CNCF OpenFeature API. NOT a runtime dependency — the provider file
   # (lib/shipeasy/sdk/openfeature.rb) requires "open_feature/sdk" lazily, so apps
