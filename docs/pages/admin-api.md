@@ -38,7 +38,7 @@ admin = Shipeasy::Admin::Client.new(
   # base_url: "http://localhost:3000",            # defaults to https://shipeasy.ai
 )
 
-gates = admin.gates.list_gates
+flags = admin.flags.list_gates
 ```
 
 `project_id` is sent as the `X-Project-Id` header on every request. Individual
@@ -50,14 +50,15 @@ Each resource group is a reader returning the matching generated api whose
 methods map 1:1 to the OpenAPI operations:
 
 ```ruby
-admin.gates.create_gate(create_gate_request)
+admin.flags.create_gate(create_gate_request)
 admin.experiments.create_experiment(create_experiment_request)
 ```
 
-Available groups: `gates`, `configs`, `killswitches`, `experiments`, `universes`,
-`metrics`, `events`, `alert_rules`, `attributes`, `projects`, `ops`, `i18n`. The
-exact method names, request models, and response shapes come straight from the
-spec — explore them under `Shipeasy::Admin::Generated`.
+Available groups: `flags`, `configs`, `killswitch`, `experiments`, `universes`,
+`attributes`, `metrics`, `events`, `ops`, `alerts`, `projects`, `profiles`,
+`keys`, `drafts`, `errors`, `connectors`, `api_keys`. The exact method names,
+request models, and response shapes come straight from the spec — explore them
+under `Shipeasy::Admin::Generated`.
 
 ## Regenerating
 

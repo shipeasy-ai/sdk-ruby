@@ -37,23 +37,29 @@ module Shipeasy
   module Admin
     # Programmatic client for the Shipeasy Admin REST API. Each resource group is
     # a lazily-constructed, memoized reader whose methods map 1:1 to the OpenAPI
-    # operations: #gates, #configs, #killswitches, #experiments, #universes,
-    # #metrics, #events, #alert_rules, #attributes, #projects, #ops, #i18n.
+    # operations: #flags, #configs, #killswitch, #experiments, #universes,
+    # #attributes, #metrics, #events, #ops, #alerts, #projects, #profiles, #keys,
+    # #drafts, #errors, #connectors, #api_keys.
     class Client
       # Friendly reader name => generated Api class.
       APIS = {
-        gates: Generated::GatesApi,
+        flags: Generated::FlagsApi,
         configs: Generated::ConfigsApi,
-        killswitches: Generated::KillswitchesApi,
+        killswitch: Generated::KillswitchApi,
         experiments: Generated::ExperimentsApi,
         universes: Generated::UniversesApi,
+        attributes: Generated::AttributesApi,
         metrics: Generated::MetricsApi,
         events: Generated::EventsApi,
-        alert_rules: Generated::AlertRulesApi,
-        attributes: Generated::AttributesApi,
-        projects: Generated::ProjectsApi,
         ops: Generated::OpsApi,
-        i18n: Generated::I18nApi,
+        alerts: Generated::AlertsApi,
+        projects: Generated::ProjectsApi,
+        profiles: Generated::ProfilesApi,
+        keys: Generated::KeysApi,
+        drafts: Generated::DraftsApi,
+        errors: Generated::ErrorsApi,
+        connectors: Generated::ConnectorsApi,
+        api_keys: Generated::APIKeysApi,
       }.freeze
 
       # @param api_key [String] admin SDK key, sent as `Authorization: Bearer <api_key>`.

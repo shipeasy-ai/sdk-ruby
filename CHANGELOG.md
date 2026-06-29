@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.1 (2026-06-29)
+
+- **Admin API client regenerated from the canonical OpenAPI spec (2.0.0).** The
+  2.3.0 client was generated from a stale 1.0.0 subset; this regenerates it from
+  the full spec, adding the connectors, errors, keys, drafts, profiles and
+  api-keys endpoints. `Shipeasy::Admin::Client` readers now track the spec tags:
+  `flags`, `configs`, `killswitch`, `experiments`, `universes`, `attributes`,
+  `metrics`, `events`, `ops`, `alerts`, `projects`, `profiles`, `keys`, `drafts`,
+  `errors`, `connectors`, `api_keys` (renamed from `gates`/`killswitches`/
+  `alert_rules`, plus the new groups).
+
 ## 2.3.0 (2026-06-29)
 
 - **Optional Admin API client** — a new opt-in `Shipeasy::Admin::Client` for

@@ -46,9 +46,11 @@ RSpec.describe "Shipeasy::Admin::Client", if: admin_available do
 
   it "exposes the resource groups, memoized" do
     client = build
-    expect(client.gates).to be_a(Shipeasy::Admin::Generated::GatesApi)
+    expect(client.flags).to be_a(Shipeasy::Admin::Generated::FlagsApi)
     expect(client.experiments).to be_a(Shipeasy::Admin::Generated::ExperimentsApi)
-    expect(client.gates).to equal(client.gates)
+    expect(client.connectors).to be_a(Shipeasy::Admin::Generated::ConnectorsApi)
+    expect(client.errors).to be_a(Shipeasy::Admin::Generated::ErrorsApi)
+    expect(client.flags).to equal(client.flags)
   end
 
   it "defaults to the production host" do
