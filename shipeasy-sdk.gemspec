@@ -51,7 +51,7 @@ Gem::Specification.new do |spec|
   # generator directly against a throwaway destination, so we avoid the fragile
   # ammeter / rspec-rails ↔ actionview version coupling. `~> 7.1` keeps Ruby 3.0
   # green (bundler resolves 7.1.x there; newer Rubies pick 7.2.x) — both fine.
-  spec.add_development_dependency "railties", "~> 7.1"
+  spec.add_development_dependency "railties", "~> 8.1"
   # Optional integration: `Shipeasy::OpenFeature::Provider` adapts FlagsClient to
   # the CNCF OpenFeature API. NOT a runtime dependency — the provider file
   # (lib/shipeasy/sdk/openfeature.rb) requires "open_feature/sdk" lazily, so apps
