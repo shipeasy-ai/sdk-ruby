@@ -39,6 +39,7 @@ PAGE_BLURB = {
   "testing"         => "`configure_for_testing` / `configure_for_offline`, overrides.",
   "openfeature"     => "`Shipeasy::OpenFeature::Provider` (OpenFeature server provider).",
   "advanced"        => "Anon-id middleware, private attributes, sticky bucketing, SSR.",
+  "admin-api"       => "Optional `Shipeasy::Admin::Client` for administering resources (generated from the OpenAPI spec).",
 }.freeze
 
 PAGE_TITLE = {
@@ -54,6 +55,7 @@ PAGE_TITLE = {
   "testing"         => "Testing",
   "openfeature"     => "OpenFeature",
   "advanced"        => "Advanced",
+  "admin-api"       => "Admin API client",
 }.freeze
 
 def read(rel)

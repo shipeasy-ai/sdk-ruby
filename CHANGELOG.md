@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.3.0 (2026-06-29)
+
+- **Optional Admin API client** — a new opt-in `Shipeasy::Admin::Client` for
+  *administering* resources (create gates, start experiments, manage configs/
+  killswitches/universes/metrics/events, …) from server code. It is a raw client
+  **generated from the Shipeasy OpenAPI spec** (1:1 with the REST API — id-based,
+  basis-points, snake_case; no name→id or percent→bp ergonomics, which stay in
+  the CLI/MCP).
+  - Off by default: the `shipeasy-sdk` entrypoint never loads it, and its HTTP
+    dependency (`faraday`) is optional. Opt in with `gem "faraday"` +
+    `require "shipeasy/admin"` (mirrors the OpenFeature provider gating).
+  - `Shipeasy::Admin::Client.new(api_key:, project_id:)` wires bearer auth +
+    `X-Project-Id` scoping (base URL defaults to `https://shipeasy.ai`); resource
+    groups are reached as `admin.gates`, `admin.experiments`, … (gates, configs,
+    killswitches, experiments, universes, metrics, events, alert_rules, attributes,
+    projects, ops, i18n).
+  - Regenerate after a contract change: refresh `admin/openapi.json` then run
+    `bash scripts/gen_admin.sh` (only the generated `lib/shipeasy_admin*` tree is
+    rewritten; the `Client` shim is preserved). Generator pinned via `openapitools.json`.
+
 ## 2.2.0 (2026-06-28)
 
 **Rails generator — `rails generate shipeasy:install`.** Scaffolds Shipeasy into

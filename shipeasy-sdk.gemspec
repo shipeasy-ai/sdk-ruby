@@ -65,4 +65,14 @@ Gem::Specification.new do |spec|
   if Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.4")
     spec.add_development_dependency "openfeature-sdk", "~> 0.6"
   end
+
+  # Optional integration: the generated Admin API client (Shipeasy::Admin::Client,
+  # lib/shipeasy/admin.rb + the generated lib/shipeasy_admin tree) talks to the
+  # Admin REST API over Faraday. NOT a runtime dependency — `require "shipeasy-sdk"`
+  # never loads it; `require "shipeasy/admin"` does. Apps that use it add
+  # `gem "faraday"` to their own Gemfile. The admin spec skips when faraday isn't
+  # loadable, so the suite stays green without it.
+  spec.add_development_dependency "faraday", ">= 1.0.1", "< 3.0"
+  spec.add_development_dependency "faraday-multipart"
+  spec.add_development_dependency "marcel"
 end
