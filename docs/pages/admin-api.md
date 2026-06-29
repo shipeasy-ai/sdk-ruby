@@ -67,7 +67,7 @@ committed. When the API contract changes, refresh the vendored spec and
 regenerate — only the generated tree is rewritten, never the `Client` shim:
 
 ```sh
-cp <monorepo>/packages/openapi/openapi.json admin/openapi.json
+cp <monorepo>/marketplace/openapi/openapi.json admin/openapi.json
 bash scripts/gen_admin.sh
 ```
 
