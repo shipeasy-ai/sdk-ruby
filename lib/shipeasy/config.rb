@@ -30,8 +30,14 @@ module Shipeasy
     #   - private_attributes: attribute keys stripped from every outbound event
     #     before it leaves the process (they still drive targeting locally).
     #   - sticky_store: pin a user's experiment group across re-buckets.
+    #   - disable_internal_error_reporting (default false): opt out of the
+    #     SDK's self-monitoring channel. When the SDK's last-resort guard
+    #     swallows one of its OWN internal errors it normally ships a structured
+    #     see event to Shipeasy's own project (NOT yours) so the SDK team can
+    #     track SDK bugs; set true to disable that entirely.
     attr_accessor :env, :disable_telemetry, :telemetry_url,
-                  :private_attributes, :sticky_store
+                  :private_attributes, :sticky_store,
+                  :disable_internal_error_reporting
 
     # SDK-wide diagnostic verbosity for the leveled logger (Shipeasy::Logging).
     # One of :silent, :error, :warn (default), :info, :debug (strings accepted
@@ -75,6 +81,7 @@ module Shipeasy
       @poll                 = false
       @env                  = "prod"
       @disable_telemetry    = false
+      @disable_internal_error_reporting = false
       @telemetry_url        = nil
       @private_attributes   = nil
       @sticky_store         = nil
@@ -157,6 +164,7 @@ module Shipeasy
         private_attributes: cfg.private_attributes,
         sticky_store:       cfg.sticky_store,
         log_level:          cfg.log_level,
+        disable_internal_error_reporting: cfg.disable_internal_error_reporting,
       )
       @engine = engine
       # Capture +engine+ in the closure (not the @engine ivar, which a concurrent

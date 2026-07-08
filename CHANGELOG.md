@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.5.0 (2026-07-08)
+
+### Added
+
+- **SDK self-monitoring for internal errors.** When the SDK's last-resort guard
+  (`Engine#safe_run`, which wraps every public runtime read) swallows an internal
+  failure — a bug on Shipeasy's side, not the caller's — it now also reports that
+  error to Shipeasy's own project so we can track and fix SDK bugs across every
+  app the SDK runs in. This is a dedicated, baked-in destination (a public
+  client-key ingest credential), entirely separate from your `see()` reporting:
+  internal errors never land in your project or Errors tab. The report carries
+  only the error itself plus a stable, deduped consequence (subject = the guarded
+  operation, e.g. `get_flag`) and is fire-and-forget on a background thread — it
+  can never slow down or break a read. On by default; opt out with
+  `c.disable_internal_error_reporting = true` in the `Shipeasy.configure` block.
+
 ## 2.4.1 (2026-07-07)
 
 ### Fixed

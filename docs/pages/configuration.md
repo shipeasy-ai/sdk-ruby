@@ -60,6 +60,7 @@ Set any of these in the `configure` block:
 | `base_url` | `https://api.shipeasy.ai` | API base URL for the blobs. Override for local dev / staging. |
 | `env` | `"prod"` | Deployment environment tag, attached to `see()` events + usage telemetry. |
 | `disable_telemetry` | `false` | Opt out of per-evaluation usage telemetry. Evaluation itself is unaffected. |
+| `disable_internal_error_reporting` | `false` | Opt out of SDK self-monitoring (see below). Evaluation itself is unaffected. |
 | `telemetry_url` | built-in | Override the telemetry endpoint (rarely needed). |
 | `private_attributes` | `nil` | Attribute keys stripped from every outbound event before it leaves the process. They still drive **targeting** locally. See [advanced](advanced.md). |
 | `sticky_store` | `nil` | Pin a user's experiment group across re-buckets. See [advanced](advanced.md). |
@@ -97,6 +98,25 @@ diagnostic). Set it in the `configure` block:
 Shipeasy.configure do |c|
   c.api_key   = ENV.fetch("SHIPEASY_SERVER_KEY")
   c.log_level = :silent   # or :error / :info / :debug
+end
+```
+
+## SDK self-monitoring
+
+When that last-resort guard swallows one of the SDK's **own** internal errors —
+a bug on Shipeasy's side, not yours — the SDK also reports it to **Shipeasy's own
+project** (a dedicated, baked-in destination), so the SDK team can find and fix
+SDK bugs across every app it runs in. This is entirely separate from your
+[`see()`](error-reporting.md) reporting: these internal errors **never land in
+your project or Errors tab**. The report is fire-and-forget on a background
+thread, deduped, and can never slow down or break a read.
+
+It's on by default. Opt out with `c.disable_internal_error_reporting = true`:
+
+```ruby
+Shipeasy.configure do |c|
+  c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY")
+  c.disable_internal_error_reporting = true
 end
 ```
 

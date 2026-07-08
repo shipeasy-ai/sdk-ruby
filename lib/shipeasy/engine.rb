@@ -9,6 +9,7 @@ require_relative "sdk/telemetry"
 require_relative "sdk/anon_id"
 require_relative "sdk/sticky_store"
 require_relative "sdk/see"
+require_relative "sdk/internal_report"
 
 module Shipeasy
   # The heavyweight engine: owns the api key, HTTP transport, the blob cache,
@@ -34,7 +35,7 @@ module Shipeasy
       # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
       DEFAULT_CDN_BASE = "https://cdn.shipeasy.ai"
 
-      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil)
+      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil, disable_internal_error_reporting: false)
         # SDK-wide diagnostic verbosity. Set the leveled logger from the passed
         # level (default :warn; unknown falls back to :warn). The logger is
         # module-scoped, so the last-built engine wins — mirrors the TS SDK,
@@ -88,6 +89,18 @@ module Shipeasy
         # see() structured error reporting. Per-process spam guard, bound here so
         # repeated reports of the same issue collapse to one send. See see.rb.
         @see_limiter = See::Limiter.new
+        # Self-monitoring channel: when safe_run swallows one of the SDK's OWN
+        # internal errors, it also ships a see event to Shipeasy's own project
+        # (a baked-in destination, distinct from the consumer's see() path) so
+        # the SDK team can track SDK bugs across every app. Fire-and-forget,
+        # never raises. On by default; forced off in test mode (no network) and
+        # opt-out-able via disable_internal_error_reporting. Module-scoped, so
+        # the last-built engine wins — mirrors set_level / the TS reference.
+        Shipeasy::SDK::InternalReport.set_context(
+          side: "server",
+          sdk_version: Shipeasy::SDK::VERSION,
+          enabled: !test_mode && !disable_internal_error_reporting,
+        )
         # Register as the default client backing the module-level Shipeasy::SDK
         # .see/.see_violation funcs (last constructed wins — the server-SDK
         # analog of TS's shipeasy({key}) configure call).
@@ -516,7 +529,21 @@ module Shipeasy
         yield
       rescue StandardError => e
         Shipeasy::Logging.error "[shipeasy] #{label} failed — returning safe default: #{e.message}"
+        # A caught error here is by definition "on our end" — an internal SDK
+        # failure, not the caller's — so in addition to logging locally it is
+        # reported to Shipeasy's own project via the self-monitoring channel
+        # (fire-and-forget, never raises). The label's stable stem (e.g.
+        # "get_flag" from "get_flag('new_checkout')") is the issue subject, so
+        # occurrences of the same bug dedupe regardless of the resource name.
+        Shipeasy::SDK::InternalReport.report(internal_subject(label), e)
         fallback
+      end
+
+      # The stable subject for an internal-error report: strip the variable
+      # "('resource')" argument off a safe_run label so the fingerprint carries
+      # no variable data and identical bugs dedupe into one issue.
+      def internal_subject(label)
+        label.to_s.sub(/\(.*\)\z/, "")
       end
 
       # Build the wire event and fire-and-forget POST it to /collect. No-op in
