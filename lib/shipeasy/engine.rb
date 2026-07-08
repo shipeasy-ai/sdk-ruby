@@ -29,7 +29,7 @@ module Shipeasy
       AnonId    = Shipeasy::SDK::AnonId
       See       = Shipeasy::SDK::See
 
-      DEFAULT_BASE_URL = "https://edge.shipeasy.dev"
+      DEFAULT_BASE_URL = "https://api.shipeasy.ai"
       # CDN origin serving the static loader scripts (/sdk/bootstrap.js,
       # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
       DEFAULT_CDN_BASE = "https://cdn.shipeasy.ai"

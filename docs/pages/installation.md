@@ -98,7 +98,7 @@ are a no-op.
 | `attributes` | identity | Callable mapping your user object → the Shipeasy attribute hash. |
 | `init` | `true` | Fire the one-shot fetch fire-and-forget. |
 | `poll` | `false` | Start the background poll (refreshes the blob over time). |
-| `base_url` | `https://edge.shipeasy.dev` | API base URL for the blobs. Override for local dev / staging. |
+| `base_url` | `https://api.shipeasy.ai` | API base URL for the blobs. Override for local dev / staging. |
 | `env` | `"prod"` | Deployment environment tag, attached to `see()` events + usage telemetry. |
 | `disable_telemetry` | `false` | Opt out of per-evaluation usage telemetry. Evaluation itself is unaffected. |
 | `telemetry_url` | built-in | Override the telemetry endpoint (rarely needed). |

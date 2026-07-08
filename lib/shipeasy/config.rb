@@ -69,7 +69,7 @@ module Shipeasy
                   :manifest_cache_ttl, :label_file_cache_ttl, :http_timeout
 
     def initialize
-      @base_url             = "https://edge.shipeasy.dev"
+      @base_url             = "https://api.shipeasy.ai"
       @attributes           = nil
       @init                 = true
       @poll                 = false
