@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.0 (2026-07-07)
+
+- **Fail-safe runtime reads + a `log_level` config option.** The public runtime
+  reads and side-effect calls — `get_flag` / `get_flag_detail` / `get_config` /
+  `get_experiment` / `get_killswitch` / `track` / `log_exposure` (on both
+  `Shipeasy::Client` and the `Engine`) — now **never raise** into caller code.
+  On any internal error they rescue, log a diagnostic, and return the documented
+  safe default (`get_flag`/`get_config` → your `default`; `get_experiment` → a
+  not-enrolled `control` result with your `default_params`; `get_killswitch` →
+  `false`; `track`/`log_exposure` → `nil`). This closes gaps where a user
+  `decode` block in `get_config`, or a synchronous `JSON.generate` in
+  `track`/`log_exposure`, could raise before the background thread. Setup and
+  lifecycle calls (`Client.new` before `configure`, a non-callable `attributes`,
+  `configure_for_offline` with no source, `Engine.from_file` on a bad path,
+  `on_change` with no callable, …) still raise loudly — those are boot-time
+  misconfiguration.
+- New **`c.log_level`** on `Shipeasy.configure` (default `:warn`; also
+  `:silent`, `:error`, `:info`, `:debug` — strings accepted and downcased,
+  unknown falls back to `:warn`). It tunes the SDK's stderr diagnostics through
+  a small leveled logger (`Shipeasy::Logging`); `:silent` mutes them entirely.
+  Ordering: `silent < error < warn < info < debug` (a message at level L is
+  emitted iff the configured level is at least as verbose as L). Logging is
+  best-effort and never raises.
+
 ## 2.3.1 (2026-06-29)
 
 - **Admin API client regenerated from the canonical OpenAPI spec (2.0.0).** The

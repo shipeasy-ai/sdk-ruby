@@ -63,8 +63,42 @@ Set any of these in the `configure` block:
 | `telemetry_url` | built-in | Override the telemetry endpoint (rarely needed). |
 | `private_attributes` | `nil` | Attribute keys stripped from every outbound event before it leaves the process. They still drive **targeting** locally. See [advanced](advanced.md). |
 | `sticky_store` | `nil` | Pin a user's experiment group across re-buckets. See [advanced](advanced.md). |
+| `log_level` | `:warn` | SDK diagnostic verbosity — one of `:silent`, `:error`, `:warn`, `:info`, `:debug`. See below. |
 | `public_key` | (none) | Public client key — for the i18n view helpers / loader tag only. |
 | `profile` | `"default"` | i18n locale profile read by the view helpers. |
+
+## Fail-safe reads & the `log_level` option
+
+The runtime reads and side-effect calls on `Shipeasy::Client` — `get_flag`,
+`get_flag_detail`, `get_config`, `get_experiment`, `get_killswitch`, `track`,
+`log_exposure` — **never raise into your code**. If anything goes wrong
+internally (a bad blob, a `decode` block that throws, a serialization error),
+the SDK rescues it, logs a diagnostic, and returns the documented **safe
+default** instead:
+
+- `get_flag` / `get_config` → the `default:` you passed,
+- `get_experiment` → a not-enrolled `control` result carrying your
+  `default_params`,
+- `get_killswitch` → `false`,
+- `track` / `log_exposure` → `nil`.
+
+So a flag read on the request path can never take down a request. (Setup and
+lifecycle calls — `Shipeasy::Client.new` before `configure`,
+`configure_for_offline` with no source, a bad snapshot file — still raise
+loudly; those are boot-time misconfiguration you want to catch.)
+
+`c.log_level` tunes how loud those recovered-error diagnostics are. Levels, from
+quietest to loudest: `:silent`, `:error`, `:warn` (the default), `:info`,
+`:debug`. A message at a level is emitted only when the configured level is at
+least as verbose (so `:warn` shows `error` + `warn`, and `:silent` mutes every
+diagnostic). Set it in the `configure` block:
+
+```ruby
+Shipeasy.configure do |c|
+  c.api_key   = ENV.fetch("SHIPEASY_SERVER_KEY")
+  c.log_level = :silent   # or :error / :info / :debug
+end
+```
 
 ## Tests and offline
 

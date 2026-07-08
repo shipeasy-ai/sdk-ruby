@@ -3,6 +3,7 @@ require "uri"
 require "json"
 require "thread"
 require "cgi"
+require_relative "logging"
 require_relative "sdk/eval"
 require_relative "sdk/telemetry"
 require_relative "sdk/anon_id"
@@ -33,7 +34,12 @@ module Shipeasy
       # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
       DEFAULT_CDN_BASE = "https://cdn.shipeasy.ai"
 
-      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil)
+      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil)
+        # SDK-wide diagnostic verbosity. Set the leveled logger from the passed
+        # level (default :warn; unknown falls back to :warn). The logger is
+        # module-scoped, so the last-built engine wins — mirrors the TS SDK,
+        # where the last configure() sets the level.
+        Shipeasy::Logging.set_level(log_level || Shipeasy::Logging::DEFAULT_LEVEL)
         @api_key     = api_key
         @base_url    = (base_url || DEFAULT_BASE_URL).chomp("/")
         # Read-env tag. Used by telemetry below and stamped onto see() error
@@ -205,6 +211,12 @@ module Shipeasy
       # Evaluate a flag and return why. Telemetry ("gate" beacon) is emitted
       # exactly once here (steps 2–5), never on the OVERRIDE short-circuit.
       def get_flag_detail(name, user)
+        safe_run("get_flag_detail('#{name}')", FlagDetail.new(value: false, reason: REASON_CLIENT_NOT_READY)) do
+          get_flag_detail_inner(name, user)
+        end
+      end
+
+      def get_flag_detail_inner(name, user)
         key = name.to_s
 
         # 1. Override short-circuits before any telemetry (mirrors get_config).
@@ -233,31 +245,51 @@ module Shipeasy
       end
 
       def get_flag(name, user, default: false)
-        detail = get_flag_detail(name, user)
-        if detail.reason == REASON_CLIENT_NOT_READY || detail.reason == REASON_FLAG_NOT_FOUND
-          default
-        else
-          detail.value
+        safe_run("get_flag('#{name}')", default) do
+          detail = get_flag_detail(name, user)
+          if detail.reason == REASON_CLIENT_NOT_READY || detail.reason == REASON_FLAG_NOT_FOUND
+            default
+          else
+            detail.value
+          end
         end
       end
 
       def get_config(name, decode = nil, default: nil)
-        key = name.to_s
-        has_override, override = @mutex.synchronize do
-          [@config_overrides.key?(key), @config_overrides[key]]
-        end
-        if has_override
-          return decode ? decode.call(override) : override
-        end
+        safe_run("get_config('#{name}')", default) do
+          key = name.to_s
+          has_override, override = @mutex.synchronize do
+            [@config_overrides.key?(key), @config_overrides[key]]
+          end
+          if has_override
+            begin
+              next(decode ? decode.call(override) : override)
+            rescue => e
+              Shipeasy::Logging.warn "[shipeasy] get_config('#{name}') decode failed: #{e.message}"
+              next default
+            end
+          end
 
-        @telemetry.emit("config", name)
-        entry = @mutex.synchronize { @flags_blob&.dig("configs", name) }
-        return default unless entry
-        value = entry["value"]
-        decode ? decode.call(value) : value
+          @telemetry.emit("config", name)
+          entry = @mutex.synchronize { @flags_blob&.dig("configs", name) }
+          next default unless entry
+          value = entry["value"]
+          begin
+            decode ? decode.call(value) : value
+          rescue => e
+            Shipeasy::Logging.warn "[shipeasy] get_config('#{name}') decode failed: #{e.message}"
+            default
+          end
+        end
       end
 
       def get_experiment(name, user, default_params, decode = nil)
+        safe_run("get_experiment('#{name}')", Eval::ExperimentResult.new(in_experiment: false, group: "control", params: default_params)) do
+          get_experiment_inner(name, user, default_params, decode)
+        end
+      end
+
+      def get_experiment_inner(name, user, default_params, decode = nil)
         key = name.to_s
         override = @mutex.synchronize { @exp_overrides[key] }
         if override
@@ -287,7 +319,7 @@ module Shipeasy
               params: decode.call(result.params),
             )
           rescue => e
-            warn "[shipeasy] get_experiment('#{name}') decode failed: #{e.message}"
+            Shipeasy::Logging.warn "[shipeasy] get_experiment('#{name}') decode failed: #{e.message}"
             return Eval::ExperimentResult.new(in_experiment: false, group: "control", params: default_params)
           end
         end
@@ -309,16 +341,18 @@ module Shipeasy
       # value (so an unconfigured key behaves exactly like the no-key call).
       # Unknown killswitches return false. Not user-scoped.
       def get_killswitch(name, switch_key = nil)
-        @telemetry.emit("ks", name)
-        ks = @mutex.synchronize { @flags_blob&.dig("killswitches", name.to_s) }
-        return false unless ks
-        unless switch_key.nil?
-          switches = ks["switches"] || {}
-          key = switch_key.to_s
-          return Eval.enabled?(switches[key]) if switches.key?(key)
-          # key not configured → fall through to the top-level value
+        safe_run("get_killswitch('#{name}')", false) do
+          @telemetry.emit("ks", name)
+          ks = @mutex.synchronize { @flags_blob&.dig("killswitches", name.to_s) }
+          next false unless ks
+          unless switch_key.nil?
+            switches = ks["switches"] || {}
+            key = switch_key.to_s
+            next Eval.enabled?(switches[key]) if switches.key?(key)
+            # key not configured → fall through to the top-level value
+          end
+          Eval.enabled?(ks["killed"])
         end
-        Eval.enabled?(ks["killed"])
       end
 
       # Batch-evaluate every loaded gate, config and experiment for +user+ into
@@ -387,24 +421,27 @@ module Shipeasy
       end
 
       def track(user_id, event_name, props = {})
-        return if @test_mode
+        safe_run("track('#{event_name}')", nil) do
+          next if @test_mode
 
-        safe_props = strip_private(props)
+          safe_props = strip_private(props)
 
-        payload = JSON.generate({
-          events: [{
-            type: "metric",
-            event_name: event_name,
-            user_id: user_id.to_s,
-            ts: (Time.now.to_f * 1000).to_i,
-            **(safe_props.empty? ? {} : { properties: safe_props }),
-          }],
-        })
+          payload = JSON.generate({
+            events: [{
+              type: "metric",
+              event_name: event_name,
+              user_id: user_id.to_s,
+              ts: (Time.now.to_f * 1000).to_i,
+              **(safe_props.empty? ? {} : { properties: safe_props }),
+            }],
+          })
 
-        Thread.new do
-          post("/collect", payload)
-        rescue => e
-          warn "[shipeasy] track failed: #{e.message}"
+          Thread.new do
+            post("/collect", payload)
+          rescue => e
+            Shipeasy::Logging.warn "[shipeasy] track failed: #{e.message}"
+          end
+          nil
         end
       end
 
@@ -415,27 +452,30 @@ module Shipeasy
       # string is wrapped as { "user_id" => id }); if enrolled, POSTs a single
       # exposure to /collect. No-op in test mode or when the user isn't enrolled.
       def log_exposure(user_or_user_id, experiment_name)
-        return if @test_mode
+        safe_run("log_exposure('#{experiment_name}')", nil) do
+          next if @test_mode
 
-        user = user_or_user_id.is_a?(Hash) ? user_or_user_id : { "user_id" => user_or_user_id.to_s }
-        result = get_experiment(experiment_name, user, {})
-        return unless result.in_experiment
+          user = user_or_user_id.is_a?(Hash) ? user_or_user_id : { "user_id" => user_or_user_id.to_s }
+          result = get_experiment(experiment_name, user, {})
+          next unless result.in_experiment
 
-        u = user.transform_keys(&:to_s)
-        payload = JSON.generate({
-          events: [{
-            type: "exposure",
-            experiment: experiment_name.to_s,
-            group: result.group,
-            user_id: (u["user_id"] || u["anonymous_id"]).to_s,
-            ts: (Time.now.to_f * 1000).to_i,
-          }],
-        })
+          u = user.transform_keys(&:to_s)
+          payload = JSON.generate({
+            events: [{
+              type: "exposure",
+              experiment: experiment_name.to_s,
+              group: result.group,
+              user_id: (u["user_id"] || u["anonymous_id"]).to_s,
+              ts: (Time.now.to_f * 1000).to_i,
+            }],
+          })
 
-        Thread.new do
-          post("/collect", payload)
-        rescue => e
-          warn "[shipeasy] log_exposure failed: #{e.message}"
+          Thread.new do
+            post("/collect", payload)
+          rescue => e
+            Shipeasy::Logging.warn "[shipeasy] log_exposure failed: #{e.message}"
+          end
+          nil
         end
       end
 
@@ -466,6 +506,19 @@ module Shipeasy
 
       private
 
+      # Last-resort guard that makes a public RUNTIME method (get_flag /
+      # get_config / get_experiment / get_killswitch / track / log_exposure)
+      # unable to raise into product code, even if an internal invariant is
+      # violated. Runs the block; on any StandardError it logs at :error and
+      # returns +fallback+ (the method's documented safe default). +label+ names
+      # the method for the log line.
+      def safe_run(label, fallback)
+        yield
+      rescue StandardError => e
+        Shipeasy::Logging.error "[shipeasy] #{label} failed — returning safe default: #{e.message}"
+        fallback
+      end
+
       # Build the wire event and fire-and-forget POST it to /collect. No-op in
       # test mode (mirrors track). Spam-guarded. Never raises into caller code.
       def dispatch_see(built)
@@ -485,10 +538,10 @@ module Shipeasy
         Thread.new do
           post("/collect", payload)
         rescue => e
-          warn "[shipeasy] see() send failed: #{e.message}"
+          Shipeasy::Logging.warn "[shipeasy] see() send failed: #{e.message}"
         end
       rescue => e
-        warn "[shipeasy] see() failed: #{e.message}"
+        Shipeasy::Logging.error "[shipeasy] see() failed: #{e.message}"
       end
 
       # Drop caller-marked private attributes from an outbound props bag. Handles
@@ -519,7 +572,7 @@ module Shipeasy
           begin
             listener.call
           rescue => e
-            warn "[shipeasy] on_change listener raised: #{e.message}"
+            Shipeasy::Logging.warn "[shipeasy] on_change listener raised: #{e.message}"
           end
         end
       end
@@ -557,7 +610,7 @@ module Shipeasy
             begin
               fetch_all
             rescue => e
-              warn "[shipeasy] background poll failed: #{e.message}"
+              Shipeasy::Logging.error "[shipeasy] background poll failed: #{e.message}"
             end
           end
         end

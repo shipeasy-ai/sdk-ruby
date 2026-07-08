@@ -1,4 +1,5 @@
 require_relative "shipeasy/sdk/version"
+require_relative "shipeasy/logging"
 require_relative "shipeasy/config"
 require_relative "shipeasy/sdk/murmur3"
 require_relative "shipeasy/sdk/eval"
@@ -54,7 +55,7 @@ module Shipeasy
     def self.see(problem)
       client = default_client
       if client.nil?
-        warn "[shipeasy] see() called before a client was created — error dropped"
+        Shipeasy::Logging.warn "[shipeasy] see() called before a client was created — error dropped"
         return See::NullChain.new
       end
       client.see(problem)
@@ -64,7 +65,7 @@ module Shipeasy
     def self.see_violation(name)
       client = default_client
       if client.nil?
-        warn "[shipeasy] see_violation() called before a client was created — error dropped"
+        Shipeasy::Logging.warn "[shipeasy] see_violation() called before a client was created — error dropped"
         return See::NullChain.new
       end
       client.see_violation(name)

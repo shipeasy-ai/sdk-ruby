@@ -33,6 +33,14 @@ module Shipeasy
     attr_accessor :env, :disable_telemetry, :telemetry_url,
                   :private_attributes, :sticky_store
 
+    # SDK-wide diagnostic verbosity for the leveled logger (Shipeasy::Logging).
+    # One of :silent, :error, :warn (default), :info, :debug (strings accepted
+    # and downcased; unknown falls back to :warn). Controls the stderr output of
+    # every caught-error diagnostic the SDK emits — the public runtime reads
+    # (get_flag/get_config/…) never raise, so this only tunes how loud they are
+    # about a recovered failure. Threaded into the global Engine by configure.
+    attr_accessor :log_level
+
     # Fetch lifecycle for the global engine `configure` builds:
     #   - init (default true): fire a one-shot fetch fire-and-forget so the first
     #     `Shipeasy::Client.new(user).get_flag(...)` resolves against real rules
@@ -70,6 +78,7 @@ module Shipeasy
       @telemetry_url        = nil
       @private_attributes   = nil
       @sticky_store         = nil
+      @log_level            = :warn
 
       @profile              = "default"
       @default_chunk        = "index"
@@ -147,6 +156,7 @@ module Shipeasy
         telemetry_url:      cfg.telemetry_url,
         private_attributes: cfg.private_attributes,
         sticky_store:       cfg.sticky_store,
+        log_level:          cfg.log_level,
       )
       @engine = engine
       # Capture +engine+ in the closure (not the @engine ivar, which a concurrent
@@ -155,13 +165,13 @@ module Shipeasy
         Thread.new do
           engine.init   # initial fetch + background poll thread
         rescue => e
-          warn "[shipeasy] configure(poll) background poll failed: #{e.message}"
+          Shipeasy::Logging.error "[shipeasy] configure(poll) background poll failed: #{e.message}"
         end
       elsif cfg.init
         Thread.new do
           engine.init_once
         rescue => e
-          warn "[shipeasy] configure() one-shot fetch failed: #{e.message}"
+          Shipeasy::Logging.error "[shipeasy] configure() one-shot fetch failed: #{e.message}"
         end
       end
       engine

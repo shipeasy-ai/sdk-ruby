@@ -34,35 +34,62 @@ module Shipeasy
       @attributes = engine.bind_attributes(mapped)
     end
 
+    # NOTE on fail-safe reads: the engine's runtime methods already never raise
+    # (each is wrapped in Engine#safe_run). The extra defensive rescue here is a
+    # belt-and-braces guard so even an unexpected failure BEFORE the engine call
+    # (e.g. an @attributes deref) still returns the documented safe default
+    # rather than propagating into product code.
+
     def get_flag(name, default: false)
       @engine.get_flag(name, @attributes, default: default)
+    rescue StandardError => e
+      Shipeasy::Logging.error "[shipeasy] Client#get_flag('#{name}') failed — returning default: #{e.message}"
+      default
     end
 
     def get_flag_detail(name)
       @engine.get_flag_detail(name, @attributes)
+    rescue StandardError => e
+      Shipeasy::Logging.error "[shipeasy] Client#get_flag_detail('#{name}') failed — returning safe default: #{e.message}"
+      Shipeasy::Engine::FlagDetail.new(value: false, reason: Shipeasy::Engine::REASON_CLIENT_NOT_READY)
     end
 
     # Configs are not user-scoped, but exposed here for one-stop ergonomics.
     def get_config(name, decode = nil, default: nil)
       @engine.get_config(name, decode, default: default)
+    rescue StandardError => e
+      Shipeasy::Logging.error "[shipeasy] Client#get_config('#{name}') failed — returning default: #{e.message}"
+      default
     end
 
     def get_experiment(name, default_params, decode = nil)
       @engine.get_experiment(name, @attributes, default_params, decode)
+    rescue StandardError => e
+      Shipeasy::Logging.error "[shipeasy] Client#get_experiment('#{name}') failed — returning safe default: #{e.message}"
+      Shipeasy::SDK::Eval::ExperimentResult.new(in_experiment: false, group: "control", params: default_params)
     end
 
     # Killswitches are not user-scoped; forwarded straight to the engine.
     def get_killswitch(name, switch_key = nil)
       @engine.get_killswitch(name, switch_key)
+    rescue StandardError => e
+      Shipeasy::Logging.error "[shipeasy] Client#get_killswitch('#{name}') failed — returning false: #{e.message}"
+      false
     end
 
     def track(event_name, props = {})
       id = @attributes["user_id"] || @attributes["anonymous_id"]
       @engine.track(id, event_name, props)
+    rescue StandardError => e
+      Shipeasy::Logging.error "[shipeasy] Client#track('#{event_name}') failed: #{e.message}"
+      nil
     end
 
     def log_exposure(experiment_name)
       @engine.log_exposure(@attributes, experiment_name)
+    rescue StandardError => e
+      Shipeasy::Logging.error "[shipeasy] Client#log_exposure('#{experiment_name}') failed: #{e.message}"
+      nil
     end
   end
 
