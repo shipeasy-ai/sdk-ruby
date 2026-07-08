@@ -4,6 +4,7 @@ require "json"
 require "thread"
 require "cgi"
 require_relative "logging"
+require_relative "sdk/env"
 require_relative "sdk/eval"
 require_relative "sdk/telemetry"
 require_relative "sdk/anon_id"
@@ -35,7 +36,7 @@ module Shipeasy
       # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
       DEFAULT_CDN_BASE = "https://cdn.shipeasy.ai"
 
-      def initialize(api_key:, base_url: nil, env: "prod", disable_telemetry: false, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil, disable_internal_error_reporting: false)
+      def initialize(api_key:, base_url: nil, env: "prod", is_network_enabled: nil, disable_telemetry: nil, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil, disable_internal_error_reporting: false)
         # SDK-wide diagnostic verbosity. Set the leveled logger from the passed
         # level (default :warn; unknown falls back to :warn). The logger is
         # module-scoped, so the last-built engine wins — mirrors the TS SDK,
@@ -59,14 +60,30 @@ module Shipeasy
         # evaluation answers come purely from local overrides. Built via the
         # Engine.for_testing factory; see clear_overrides / override_*.
         @test_mode   = test_mode
-        # Per-evaluation usage telemetry. ON by default; pass
-        # disable_telemetry: true to opt out. See telemetry.rb.
+        # Environment-derived egress default. Both the master network switch and
+        # usage telemetry default ON in production and OFF everywhere else, so an
+        # app that embeds the SDK is quiet by default on a dev machine or in CI.
+        # The production decision consults native env vars first (SHIPEASY_ENV /
+        # RAILS_ENV / RACK_ENV / APP_ENV), then falls back to the configured `env`
+        # tag. See sdk/env.rb.
+        prod = Shipeasy::SDK::Env.is_production_env(env)
+        # Master network gate. test_mode always forces the SDK fully offline;
+        # otherwise honour an explicit is_network_enabled, else default to
+        # prod-on. When @offline, every fetch / track / exposure / see() / poll /
+        # telemetry send is a no-op — reads answer from overrides / in-code
+        # defaults only.
+        network_enabled = @test_mode ? false : (is_network_enabled.nil? ? prod : (is_network_enabled ? true : false))
+        @offline = !network_enabled
+        # Per-evaluation usage telemetry. Honour an explicit disable_telemetry,
+        # else default to prod-on (off outside production). Forced off whenever
+        # the master network switch is off. See telemetry.rb.
+        telemetry_disabled = @offline || (disable_telemetry.nil? ? !prod : (disable_telemetry ? true : false))
         @telemetry = Telemetry.new(
           endpoint: telemetry_url || Telemetry::DEFAULT_TELEMETRY_URL,
           sdk_key: api_key,
           side: "server",
           env: env,
-          disabled: disable_telemetry,
+          disabled: telemetry_disabled,
         )
         @flags_blob  = nil
         @exps_blob   = nil
@@ -103,7 +120,7 @@ module Shipeasy
         Shipeasy::SDK::InternalReport.set_context(
           side: "server",
           sdk_version: Shipeasy::SDK::VERSION,
-          enabled: !test_mode && !disable_internal_error_reporting,
+          enabled: !@offline && !disable_internal_error_reporting,
         )
         # Register as the default client backing the module-level Shipeasy::SDK
         # .see/.see_violation funcs (last constructed wins — the server-SDK
@@ -153,14 +170,14 @@ module Shipeasy
       end
 
       def init
-        return if @test_mode
+        return if @offline
         fetch_all
         @initialized = true
         start_poll
       end
 
       def init_once
-        return if @test_mode
+        return if @offline
         return if @initialized
         fetch_all
         @initialized = true
@@ -470,7 +487,7 @@ module Shipeasy
 
       def track(user_id, event_name, props = {})
         safe_run("track('#{event_name}')", nil) do
-          next if @test_mode
+          next if @offline
 
           safe_props = strip_private(props)
 
@@ -583,7 +600,7 @@ module Shipeasy
       # spam /collect. Fire-and-forget; no-op in test mode. This is how
       # assign_universe auto-logs — the browser's auto-exposure parity for SSR.
       def post_exposure(user, experiment, group)
-        return if @test_mode
+        return if @offline
         u = user.transform_keys(&:to_s)
         uid = u["user_id"] || u["anonymous_id"]
         dedup_key = "#{uid}:#{experiment}:#{group}"
@@ -614,7 +631,7 @@ module Shipeasy
       # Build the wire event and fire-and-forget POST it to /collect. No-op in
       # test mode (mirrors track). Spam-guarded. Never raises into caller code.
       def dispatch_see(built)
-        return if @test_mode
+        return if @offline
 
         ev = See.build_event(
           built.problem,

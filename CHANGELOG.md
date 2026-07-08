@@ -1,5 +1,49 @@
 # Changelog
 
+## 3.1.0 (2026-07-08)
+
+### Environment-derived network & telemetry (egress) defaults
+
+The SDK is now **quiet by default outside production**. Two egress controls
+default **ON in production and OFF in every other environment**, so an app that
+embeds `shipeasy-sdk` makes **no outbound request from a dev machine or CI**
+unless it opts in:
+
+- **`is_network_enabled`** (new `configure` option) — the master switch for ALL
+  outbound requests: flag/experiment/config fetch, `track`, exposure logging,
+  `see()` reports, SDK self-monitoring, **and** telemetry. When off the SDK is
+  fully offline: reads answer from your overrides / in-code defaults and nothing
+  is sent.
+- **`disable_telemetry`** (existing option) — its **default is now
+  environment-derived** rather than always-on: telemetry is ON in production and
+  OFF outside it. Forced off whenever `is_network_enabled` is off.
+
+"Production" is decided by a new `Shipeasy::SDK::Env.is_production_env` helper
+with this precedence:
+
+1. A native runtime env var, checked in order: `SHIPEASY_ENV`, `RAILS_ENV`,
+   `RACK_ENV`, `APP_ENV`. `"production"`/`"prod"` (case-insensitive) ⇒ production;
+   any other present value ⇒ not production.
+2. If none is set, fall back to the SDK's own `env` option (defaults to `"prod"`),
+   so a real production deploy stays ON by default.
+
+**Behaviour change / how to restore the old always-on behaviour.** Existing apps
+that ran the SDK in a non-production environment and relied on live network/
+telemetry will now be offline there. To keep the previous behaviour, either set a
+production env var (e.g. `RAILS_ENV=production` / `SHIPEASY_ENV=production`) in
+that environment, or opt in explicitly:
+
+```ruby
+Shipeasy.configure do |c|
+  c.api_key            = ENV.fetch("SHIPEASY_SERVER_KEY")
+  c.is_network_enabled = true   # force the network on regardless of environment
+end
+```
+
+Explicitly-passed `is_network_enabled` / `disable_telemetry` values always
+override the environment-derived default. Test mode (`configure_for_testing` /
+`configure_for_offline`) is unchanged — it forces the SDK fully offline as before.
+
 ## 3.0.0 (2026-07-08)
 
 ### Breaking — experiments are now read by universe, not by name

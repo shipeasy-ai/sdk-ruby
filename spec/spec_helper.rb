@@ -1,3 +1,11 @@
+# Declare the whole suite production-equivalent for EGRESS. The SDK now defaults
+# its network + telemetry switches OFF outside production (see lib/shipeasy/sdk/
+# env.rb), which would otherwise turn every real-network spec into a no-op since
+# tests run in a non-production env. Setting SHIPEASY_ENV=production here makes
+# is_production_env true, so the existing on-by-default network behaviour holds.
+# The dedicated env/egress specs override ENV locally to exercise the dev branch.
+ENV["SHIPEASY_ENV"] ||= "production"
+
 require "shipeasy-sdk"
 
 RSpec.configure do |config|

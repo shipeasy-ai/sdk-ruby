@@ -25,7 +25,18 @@ module Shipeasy
     # Advanced `configure` options — threaded into the global Engine `configure`
     # builds, so callers never construct an Engine themselves:
     #   - env (default "prod"): deployment tag on see() events + usage telemetry.
-    #   - disable_telemetry (default false): opt out of per-eval usage telemetry.
+    #   - is_network_enabled (default: environment-derived): master switch for ALL
+    #     outbound requests (flag/experiment/config fetch, track, exposure logging,
+    #     see() reports, AND telemetry). Defaults ON in production and OFF in every
+    #     other environment, so a dev machine / CI run stays fully offline unless
+    #     you opt in. Explicit true/false always overrides. "Production" is decided
+    #     from SHIPEASY_ENV / RAILS_ENV / RACK_ENV / APP_ENV, then the `env` tag
+    #     (see sdk/env.rb). When off, reads answer from overrides / in-code
+    #     defaults and nothing is sent.
+    #   - disable_telemetry (default: environment-derived — off in prod, i.e.
+    #     telemetry ON in prod / OFF outside prod): opt out of per-eval usage
+    #     telemetry. Explicit true/false overrides; forced off when the network is
+    #     disabled.
     #   - telemetry_url: override the telemetry endpoint (rarely needed).
     #   - private_attributes: attribute keys stripped from every outbound event
     #     before it leaves the process (they still drive targeting locally).
@@ -35,7 +46,7 @@ module Shipeasy
     #     swallows one of its OWN internal errors it normally ships a structured
     #     see event to Shipeasy's own project (NOT yours) so the SDK team can
     #     track SDK bugs; set true to disable that entirely.
-    attr_accessor :env, :disable_telemetry, :telemetry_url,
+    attr_accessor :env, :is_network_enabled, :disable_telemetry, :telemetry_url,
                   :private_attributes, :sticky_store,
                   :disable_internal_error_reporting
 
@@ -80,7 +91,10 @@ module Shipeasy
       @init                 = true
       @poll                 = false
       @env                  = "prod"
-      @disable_telemetry    = false
+      # nil ⇒ environment-derived default (see Engine / sdk/env.rb). An explicit
+      # true/false set in the configure block always overrides.
+      @is_network_enabled   = nil
+      @disable_telemetry    = nil
       @disable_internal_error_reporting = false
       @telemetry_url        = nil
       @private_attributes   = nil
@@ -159,6 +173,7 @@ module Shipeasy
         api_key:            cfg.api_key,
         base_url:           cfg.base_url,
         env:                cfg.env,
+        is_network_enabled: cfg.is_network_enabled,
         disable_telemetry:  cfg.disable_telemetry,
         telemetry_url:      cfg.telemetry_url,
         private_attributes: cfg.private_attributes,
