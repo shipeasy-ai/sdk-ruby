@@ -51,7 +51,7 @@ module Shipeasy
 
       # The baked-in ingest credential. Swap the placeholder for the real minted
       # key here (this is the ONLY line to change when the key is provisioned).
-      INGEST_KEY = PLACEHOLDER_KEY
+      INGEST_KEY = "sdk_client_00bd4608a03e4084922978f9522614d5"
 
       # Stable consequence. The `label` (the safe_run operation name, e.g.
       # "flags.get") is the subject; the outcome is fixed. Both are constant per
