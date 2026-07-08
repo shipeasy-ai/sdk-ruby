@@ -170,13 +170,13 @@ module Shipeasy
       # Capture +engine+ in the closure (not the @engine ivar, which a concurrent
       # reset/reconfigure could nil out before the thread runs).
       if cfg.poll
-        Thread.new do
+        @boot_thread = Thread.new do
           engine.init   # initial fetch + background poll thread
         rescue => e
           Shipeasy::Logging.error "[shipeasy] configure(poll) background poll failed: #{e.message}"
         end
       elsif cfg.init
-        Thread.new do
+        @boot_thread = Thread.new do
           engine.init_once
         rescue => e
           Shipeasy::Logging.error "[shipeasy] configure() one-shot fetch failed: #{e.message}"
@@ -327,6 +327,13 @@ module Shipeasy
 
     # Reset the config back to defaults — primarily for tests.
     def reset_config!
+      # Reap the fire-and-forget boot thread first: it holds its own engine
+      # reference, so left alive it can call init/init_once during the NEXT
+      # test example and trip any_instance expectations armed there.
+      if (t = @boot_thread)
+        t.join(1) || t.kill
+        @boot_thread = nil
+      end
       @config = nil
       @flags_pid = nil
       @flags&.destroy
