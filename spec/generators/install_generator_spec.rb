@@ -50,6 +50,10 @@ RSpec.describe Shipeasy::Generators::InstallGenerator do
       expect(content).to include("c.poll = true")
     end
 
+    it "pins network egress to the Rails environment" do
+      expect(File.read(initializer)).to include("c.is_network_enabled = Rails.env.production?")
+    end
+
     it "leaves i18n out of the initializer" do
       expect(File.read(initializer)).not_to include("public_key")
     end

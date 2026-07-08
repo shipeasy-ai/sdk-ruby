@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.1.1 (2026-07-08)
+
+### Rails generator pins network egress to the environment
+
+`rails generate shipeasy:install` now writes
+`c.is_network_enabled = Rails.env.production?` into the generated
+`config/initializers/shipeasy.rb`, so a freshly-scaffolded Rails app is fully
+active in production and completely quiet in development / test. Set it to `true`
+to load flags in development, or remove the line to let the SDK infer production
+from `RAILS_ENV`/`RACK_ENV`/`APP_ENV`.
+
 ## 3.1.0 (2026-07-08)
 
 ### Environment-derived network & telemetry (egress) defaults

@@ -17,6 +17,16 @@ Shipeasy.configure do |c|
   #   c.api_key = Rails.application.credentials.dig(:shipeasy, :server_key)
   c.api_key = ENV.fetch("SHIPEASY_SERVER_KEY", nil)
 
+  # Network egress — the master switch for ALL outbound requests (flag/experiment
+  # fetches, track, exposures, see() reports, usage telemetry, internal
+  # self-monitoring). Pinned to the Rails environment so the SDK is fully active
+  # in production and stays completely quiet from a dev machine or CI — reads
+  # return your in-code defaults there, nothing leaves the process. Flip this to
+  # `true` (or unset it) if you want flags to load in development too. The SDK
+  # otherwise infers this from RAILS_ENV/RACK_ENV/APP_ENV; this line just makes
+  # the intent explicit and easy to override.
+  c.is_network_enabled = Rails.env.production?
+
 <% if options[:poll] -%>
   # Long-running server (Puma): keep flags fresh with the background poll
   # (initial fetch + periodic refresh). Set to false for serverless /
