@@ -60,12 +60,12 @@ RSpec.describe "Shipeasy.configure + Shipeasy::Client(user)" do
       client.track("click", { "btn" => "red" })
     end
 
-    it "forwards log_exposure to the engine using the bound attributes" do
+    it "forwards universe(name).assign to the engine using the bound attributes" do
       Shipeasy.configure { |c| c.api_key = "srv_key" }
       client = Shipeasy::Client.new("user_id" => "u1", "plan" => "pro")
 
-      expect(Shipeasy.engine).to receive(:log_exposure).with(client.attributes, "exp1")
-      client.log_exposure("exp1")
+      expect(Shipeasy.engine).to receive(:assign_universe).with("checkout", client.attributes)
+      client.universe("checkout").assign
     end
   end
 

@@ -52,7 +52,7 @@ module Shipeasy
         # track(), where the listed keys are dropped from the props bag.
         @private_attributes = (private_attributes || []).map(&:to_s)
         # Pluggable sticky-bucketing store (doc 20 §2). Absent ⇒ deterministic.
-        # Threaded into get_experiment so an enrolled unit locks to its first
+        # Threaded into experiment eval so an enrolled unit locks to its first
         # assigned variant. Built-in: InMemoryStickyStore.
         @sticky_store = sticky_store
         # Test mode: no network, ever. init/init_once/track become no-ops and
@@ -89,6 +89,10 @@ module Shipeasy
         # see() structured error reporting. Per-process spam guard, bound here so
         # repeated reports of the same issue collapse to one send. See see.rb.
         @see_limiter = See::Limiter.new
+        # Auto-exposure dedup set: assign() logs a single exposure per
+        # (unit, experiment, group) so repeated assigns in one process don't spam
+        # /collect. Bounded — cleared when it grows past ~5000 keys.
+        @exposure_seen = {}
         # Self-monitoring channel: when safe_run swallows one of the SDK's OWN
         # internal errors, it also ships a see event to Shipeasy's own project
         # (a baked-in destination, distinct from the consumer's see() path) so
@@ -296,48 +300,68 @@ module Shipeasy
         end
       end
 
-      def get_experiment(name, user, default_params, decode = nil)
-        safe_run("get_experiment('#{name}')", Eval::ExperimentResult.new(in_experiment: false, group: "control", params: default_params)) do
-          get_experiment_inner(name, user, default_params, decode)
+      # Assign +user+ within +universe_name+. A universe is a mutual-exclusion
+      # pool, so a unit lands in AT MOST ONE experiment; the returned
+      # Eval::Assignment exposes the variant + resolved params and auto-logs a
+      # single exposure when enrolled. An un-enrolled unit still resolves get()
+      # to the universe defaults. Never raises. This is the sole experiment read
+      # path — there is no get_experiment (a caller asks a universe, not an
+      # experiment). Internal: the public surface is universe(name).assign(user).
+      def assign_universe(universe_name, user)
+        empty = Eval::Assignment.new(nil, nil, {})
+        safe_run("assign_universe('#{universe_name}')", empty) do
+          @telemetry.emit("experiment", universe_name)
+          u = with_anon_id(user)
+          flags_blob, exps_blob = @mutex.synchronize { [@flags_blob, @exps_blob] }
+
+          universe = exps_blob&.dig("universes", universe_name.to_s)
+          param_defaults = Eval.param_defaults_from_schema(
+            universe && (universe["param_schema"] || universe[:param_schema])
+          )
+          not_enrolled = Eval::Assignment.new(nil, nil, param_defaults || {})
+          next not_enrolled unless exps_blob
+
+          # Candidate running experiments in this universe. Deterministic order:
+          # pool-slice offset asc (slices are disjoint so <=1 matches under
+          # pooling), then name. A universe-held-out or unallocated unit falls
+          # through to the defaults-only handle.
+          candidates = (exps_blob["experiments"] || {}).select do |_name, exp|
+            exp["universe"] == universe_name.to_s && exp["status"] == "running"
+          end.sort_by { |name, exp| [(exp["poolOffsetBp"] || 0), name] }
+
+          landed = nil
+          candidates.each do |name, exp|
+            result = eval_experiment(name, exp, u, flags_blob, exps_blob)
+            next unless result.in_experiment
+            post_exposure(u, name, result.group)
+            landed = Eval::Assignment.new(name, result.group, result.params || {})
+            break
+            # not enrolled: try the next candidate — under pooling only one slice
+            # can match, so the loop lands on the winner (or falls through).
+          end
+
+          landed || not_enrolled
         end
       end
 
-      def get_experiment_inner(name, user, default_params, decode = nil)
-        key = name.to_s
-        override = @mutex.synchronize { @exp_overrides[key] }
-        if override
-          params = override[:params]
-          params = decode.call(params) if decode
-          return Eval::ExperimentResult.new(
-            in_experiment: true,
-            group: override[:group],
-            params: params,
-          )
+      # A reusable handle bound to one universe. +assign(user)+ picks the <=1
+      # experiment the unit is pooled into and auto-logs a single exposure. See
+      # assign_universe.
+      def universe(name)
+        UniverseHandle.new(self, name)
+      end
+
+      # Returned by Engine#universe. Binds a universe name so callers can reuse
+      # the handle: `engine.universe("checkout").assign(user)`.
+      class UniverseHandle
+        def initialize(engine, name)
+          @engine = engine
+          @name   = name
         end
 
-        @telemetry.emit("experiment", name)
-        flags_blob, exps_blob = @mutex.synchronize { [@flags_blob, @exps_blob] }
-        exp = exps_blob&.dig("experiments", name)
-        result = Eval.eval_experiment(
-          exp, flags_blob, exps_blob, with_anon_id(user),
-          exp_name: name.to_s, sticky_store: @sticky_store,
-        )
-        result.params ||= default_params
-
-        if result.in_experiment && decode
-          begin
-            result = Eval::ExperimentResult.new(
-              in_experiment: true,
-              group: result.group,
-              params: decode.call(result.params),
-            )
-          rescue => e
-            Shipeasy::Logging.warn "[shipeasy] get_experiment('#{name}') decode failed: #{e.message}"
-            return Eval::ExperimentResult.new(in_experiment: false, group: "control", params: default_params)
-          end
+        def assign(user)
+          @engine.assign_universe(@name, user)
         end
-
-        result
       end
 
       # Public hook for the bound Shipeasy::Client: normalise an attribute hash
@@ -376,9 +400,8 @@ module Shipeasy
       # for this SDK. No telemetry (a batch evaluate is not a per-flag exposure).
       def evaluate(user)
         u = with_anon_id(user)
-        flags_blob, exps_blob, flag_ov, config_ov, exp_ov, sticky = @mutex.synchronize do
-          [@flags_blob, @exps_blob, @flag_overrides.dup, @config_overrides.dup,
-           @exp_overrides.dup, @sticky_store]
+        flags_blob, exps_blob, flag_ov, config_ov = @mutex.synchronize do
+          [@flags_blob, @exps_blob, @flag_overrides.dup, @config_overrides.dup]
         end
 
         flags = {}
@@ -391,18 +414,30 @@ module Shipeasy
           configs[name] = config_ov.key?(name) ? config_ov[name] : entry["value"]
         end
 
+        # Per-experiment result carries the universe name; a top-level universes
+        # map exposes each universe's param defaults so the client can resolve
+        # universe(name).get() to a default even when the unit is not enrolled.
         experiments = {}
+        universes = {}
         (exps_blob&.dig("experiments") || {}).each do |name, exp|
-          if exp_ov.key?(name)
-            ov = exp_ov[name]
-            experiments[name] = { "inExperiment" => true, "group" => ov[:group], "params" => ov[:params] }
-            next
+          uni_name = exp["universe"]
+          unless universes.key?(uni_name)
+            uni = exps_blob&.dig("universes", uni_name)
+            universes[uni_name] = {
+              "defaults" => Eval.param_defaults_from_schema(uni && (uni["param_schema"] || uni[:param_schema])) || {},
+            }
           end
-          r = Eval.eval_experiment(exp, flags_blob, exps_blob, u, exp_name: name, sticky_store: sticky)
-          experiments[name] = { "inExperiment" => r.in_experiment, "group" => r.group, "params" => r.params }
+          r = eval_experiment(name, exp, u, flags_blob, exps_blob, emit_telemetry: false)
+          experiments[name] = {
+            "inExperiment" => r.in_experiment,
+            "group" => r.in_experiment ? r.group : "control",
+            "params" => r.in_experiment ? (r.params || {}) : {},
+            "universe" => uni_name,
+          }
         end
 
-        { "flags" => flags, "configs" => configs, "experiments" => experiments, "killswitches" => {} }
+        { "flags" => flags, "configs" => configs, "experiments" => experiments,
+          "killswitches" => {}, "universes" => universes }
       end
 
       # Return the cross-platform SSR bootstrap <script> tag for a request:
@@ -458,40 +493,6 @@ module Shipeasy
         end
       end
 
-      # Emit an exposure event for an experiment at the server-side decision
-      # point (parity with the browser's auto-exposure). The server is stateless
-      # and never auto-logs, so call this when you actually present the
-      # treatment. Re-evaluates the experiment for the user (a bare user_id
-      # string is wrapped as { "user_id" => id }); if enrolled, POSTs a single
-      # exposure to /collect. No-op in test mode or when the user isn't enrolled.
-      def log_exposure(user_or_user_id, experiment_name)
-        safe_run("log_exposure('#{experiment_name}')", nil) do
-          next if @test_mode
-
-          user = user_or_user_id.is_a?(Hash) ? user_or_user_id : { "user_id" => user_or_user_id.to_s }
-          result = get_experiment(experiment_name, user, {})
-          next unless result.in_experiment
-
-          u = user.transform_keys(&:to_s)
-          payload = JSON.generate({
-            events: [{
-              type: "exposure",
-              experiment: experiment_name.to_s,
-              group: result.group,
-              user_id: (u["user_id"] || u["anonymous_id"]).to_s,
-              ts: (Time.now.to_f * 1000).to_i,
-            }],
-          })
-
-          Thread.new do
-            post("/collect", payload)
-          rescue => e
-            Shipeasy::Logging.warn "[shipeasy] log_exposure failed: #{e.message}"
-          end
-          nil
-        end
-      end
-
       # ---- see() structured error reporting -------------------------------
 
       # Report a caught exception (or thrown non-exception). Fire-and-forget;
@@ -520,8 +521,8 @@ module Shipeasy
       private
 
       # Last-resort guard that makes a public RUNTIME method (get_flag /
-      # get_config / get_experiment / get_killswitch / track / log_exposure)
-      # unable to raise into product code, even if an internal invariant is
+      # get_config / assign_universe / get_killswitch / track) unable to raise
+      # into product code, even if an internal invariant is
       # violated. Runs the block; on any StandardError it logs at :error and
       # returns +fallback+ (the method's documented safe default). +label+ names
       # the method for the log line.
@@ -544,6 +545,70 @@ module Shipeasy
       # no variable data and identical bugs dedupe into one issue.
       def internal_subject(label)
         label.to_s.sub(/\(.*\)\z/, "")
+      end
+
+      # Evaluate one experiment by name for +user+ — override -> full classify
+      # pipeline (targeting -> universe holdout -> holdout gate -> sticky ->
+      # allocation -> group), merging the universe defaults under the assigned
+      # variant. Returns an Eval::ExperimentResult. Reused by assign_universe and
+      # the SSR evaluate() bootstrap (keyed by experiment name). Emits the
+      # per-experiment telemetry beacon exactly once (never on the override
+      # short-circuit), unless +emit_telemetry+ is false (the batch evaluate()
+      # path is not a per-experiment exposure). +user+ is expected pre-normalised
+      # (with_anon_id).
+      def eval_experiment(name, exp, user, flags_blob, exps_blob, emit_telemetry: true)
+        key = name.to_s
+        override = @mutex.synchronize { @exp_overrides[key] }
+        if override
+          universe = exps_blob&.dig("universes", exp && exp["universe"])
+          param_defaults = Eval.param_defaults_from_schema(
+            universe && (universe["param_schema"] || universe[:param_schema])
+          )
+          return Eval::ExperimentResult.new(
+            in_experiment: true,
+            group: override[:group],
+            params: Eval.merge_params(param_defaults, override[:params]),
+          )
+        end
+
+        @telemetry.emit("experiment", name) if emit_telemetry
+        Eval.eval_experiment(
+          exp, flags_blob, exps_blob, user,
+          exp_name: key, sticky_store: @sticky_store,
+        )
+      end
+
+      # POST a single exposure for an enrolled (user, experiment, group). Deduped
+      # per process (bounded set) so repeated assign() calls in one server don't
+      # spam /collect. Fire-and-forget; no-op in test mode. This is how
+      # assign_universe auto-logs — the browser's auto-exposure parity for SSR.
+      def post_exposure(user, experiment, group)
+        return if @test_mode
+        u = user.transform_keys(&:to_s)
+        uid = u["user_id"] || u["anonymous_id"]
+        dedup_key = "#{uid}:#{experiment}:#{group}"
+        @mutex.synchronize do
+          return if @exposure_seen.key?(dedup_key)
+          @exposure_seen.clear if @exposure_seen.size > 5000
+          @exposure_seen[dedup_key] = true
+        end
+
+        payload = JSON.generate({
+          events: [{
+            type: "exposure",
+            experiment: experiment.to_s,
+            group: group,
+            user_id: uid.to_s,
+            ts: (Time.now.to_f * 1000).to_i,
+          }],
+        })
+
+        Thread.new do
+          post("/collect", payload)
+        rescue => e
+          Shipeasy::Logging.warn "[shipeasy] exposure send failed: #{e.message}"
+        end
+        nil
       end
 
       # Build the wire event and fire-and-forget POST it to /collect. No-op in

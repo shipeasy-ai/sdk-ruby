@@ -59,8 +59,8 @@ flags = Shipeasy::Client.new(current_user)
 
 flags.get_flag("new_checkout")                       # NO user arg — bound at construction
 flags.get_config("button_color")
-result = flags.get_experiment("checkout_cta", { label: "Buy" })
-flags.log_exposure("checkout_cta")                   # at the decision point
+assignment = flags.universe("checkout").assign       # <=1 experiment; auto-logs exposure
+assignment.get("label", "Buy")                       # variant ?? universe default ?? fallback
 flags.track("purchase", { revenue: 49 })             # on conversion
 flags.get_killswitch("payments")
 ```
@@ -78,7 +78,7 @@ Constructing `Shipeasy::Client.new(user)` before `Shipeasy.configure` raises
 | [Feature flags](https://github.com/shipeasy-ai/sdk-ruby/blob/main/docs/pages/flags.md) | `get_flag`, `get_flag_detail`, defaults. |
 | [Dynamic configs](https://github.com/shipeasy-ai/sdk-ruby/blob/main/docs/pages/configs.md) | `get_config`, typed decode, defaults. |
 | [Kill switches](https://github.com/shipeasy-ai/sdk-ruby/blob/main/docs/pages/killswitches.md) | `get_killswitch`, named switches. |
-| [Experiments](https://github.com/shipeasy-ai/sdk-ruby/blob/main/docs/pages/experiments.md) | `get_experiment`, `log_exposure`, `track`. |
+| [Experiments](https://github.com/shipeasy-ai/sdk-ruby/blob/main/docs/pages/experiments.md) | `universe(name).assign`, `Assignment#get`, `track`. |
 | [Internationalization](https://github.com/shipeasy-ai/sdk-ruby/blob/main/docs/pages/i18n.md) | Rails view helpers + the SSR loader tag. |
 | [Error reporting](https://github.com/shipeasy-ai/sdk-ruby/blob/main/docs/pages/error-reporting.md) | `see()` structured error reporting. |
 | [Testing](https://github.com/shipeasy-ai/sdk-ruby/blob/main/docs/pages/testing.md) | `configure_for_testing` / `configure_for_offline`, overrides. |
@@ -109,12 +109,15 @@ client = Shipeasy::Client.new({ "user_id" => "u_123" })
 client.get_flag("new_checkout")              # => true
 client.get_config("billing_copy")            # => { "title" => "Welcome" }
 
-result = client.get_experiment("checkout_button", { "color" => "blue" })
-result.in_experiment                         # => true
-result.group                                 # => "treatment"
-result.params                                # => { "color" => "green" }
+# An experiment override surfaces through universe(name).assign once the loaded
+# blob maps that experiment to its universe (an offline snapshot does this; a
+# bare configure_for_testing has no blob). Read via the universe:
+assignment = client.universe("checkout").assign
+assignment.enrolled?                         # => true
+assignment.group                             # => "treatment"
+assignment.get("color")                      # => "green"
 
-# track / log_exposure are no-ops in test mode — safe to call, send nothing
+# track / assign exposures are no-ops in test mode — safe to call, send nothing
 client.track("purchase", { amount: 49 })
 ```
 

@@ -71,17 +71,16 @@ Set any of these in the `configure` block:
 ## Fail-safe reads & the `log_level` option
 
 The runtime reads and side-effect calls on `Shipeasy::Client` — `get_flag`,
-`get_flag_detail`, `get_config`, `get_experiment`, `get_killswitch`, `track`,
-`log_exposure` — **never raise into your code**. If anything goes wrong
-internally (a bad blob, a `decode` block that throws, a serialization error),
-the SDK rescues it, logs a diagnostic, and returns the documented **safe
-default** instead:
+`get_flag_detail`, `get_config`, `universe(name).assign`, `get_killswitch`,
+`track` — **never raise into your code**. If anything goes wrong internally (a
+bad blob, a `decode` block that throws, a serialization error), the SDK rescues
+it, logs a diagnostic, and returns the documented **safe default** instead:
 
 - `get_flag` / `get_config` → the `default:` you passed,
-- `get_experiment` → a not-enrolled `control` result carrying your
-  `default_params`,
+- `universe(name).assign` → a not-enrolled `Assignment` (`name`/`group` `nil`;
+  `get` still resolves the universe default or your fallback),
 - `get_killswitch` → `false`,
-- `track` / `log_exposure` → `nil`.
+- `track` → `nil`.
 
 So a flag read on the request path can never take down a request. (Setup and
 lifecycle calls — `Shipeasy::Client.new` before `configure`,

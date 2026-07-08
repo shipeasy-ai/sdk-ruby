@@ -242,9 +242,10 @@ RSpec.describe "Shipeasy::Engine parity features" do
       )
       expect(client.get_flag("g", user)).to eq(true)
       expect(client.get_config("color")).to eq("blue")
-      r = client.get_experiment("exp", user, {})
-      expect(r.in_experiment).to eq(true)
-      expect(r.group).to eq("control")
+      a = client.universe("u").assign(user)
+      expect(a.enrolled?).to eq(true)
+      expect(a.name).to eq("exp")
+      expect(a.group).to eq("control")
     end
 
     it "from_snapshot honours init/init_once/track as no-ops and never fetches" do

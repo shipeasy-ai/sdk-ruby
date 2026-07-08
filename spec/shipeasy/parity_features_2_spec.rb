@@ -1,12 +1,12 @@
 require "spec_helper"
 
-# Coverage for the three competitor-parity additions in 1.5.0:
+# Coverage for the three competitor-parity additions:
 #   A. private_attributes — stripped from outbound track() props
-#   B. log_exposure — manual server-side exposure logging
+#   B. auto-exposure — universe().assign() logs one deduped exposure when enrolled
 #   C. sticky bucketing — StickyBucketStore + InMemoryStickyStore
 RSpec.describe "Shipeasy::Engine parity features (round 2)" do
   # Capture the JSON body that would be POSTed to /collect, synchronously.
-  # track/log_exposure post inside a Thread.new; we stub `post` to record the
+  # track/assign post inside a Thread.new; we stub `post` to record the
   # parsed body and join the spawned thread so the assertion is deterministic.
   def capture_collect(client)
     bodies = []
@@ -69,9 +69,9 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
     end
   end
 
-  # ---- Feature B: manual exposure ---------------------------------------
+  # ---- Feature B: auto-exposure on assign() -----------------------------
 
-  describe "#log_exposure" do
+  describe "universe().assign() auto-exposure" do
     let(:running_exp) do
       {
         "experiments" => {
@@ -87,18 +87,18 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
       }
     end
 
-    # log_exposure needs a LIVE (non-test) client so it actually posts; seed its
+    # Auto-exposure needs a LIVE (non-test) client so it actually posts; seed its
     # blobs directly (load_snapshot) without going through from_snapshot (which
-    # is test_mode and short-circuits log_exposure to a no-op).
+    # is test_mode and short-circuits post_exposure to a no-op).
     def live_client_with(exps)
       client = Shipeasy::Engine.new(api_key: "k", disable_telemetry: true)
       client.send(:load_snapshot, {}, exps)
       client
     end
 
-    it "POSTs one exposure event when the user is enrolled" do
+    it "POSTs one exposure event when the unit is enrolled" do
       client = live_client_with(running_exp)
-      bodies = capture_collect(client) { client.log_exposure("u_1", "exp") }
+      bodies = capture_collect(client) { client.universe("u").assign({ "user_id" => "u_1" }) }
       expect(bodies.length).to eq(1)
       path, body = bodies.first
       expect(path).to eq("/collect")
@@ -110,24 +110,29 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
       expect(ev["ts"]).to be_a(Integer)
     end
 
-    it "accepts a user hash and resolves the user_id" do
+    it "dedups repeated assigns for the same (unit, experiment, group)" do
       client = live_client_with(running_exp)
-      bodies = capture_collect(client) { client.log_exposure({ "user_id" => "u_9" }, "exp") }
-      expect(bodies.first[1]["events"][0]["user_id"]).to eq("u_9")
+      bodies = capture_collect(client) do
+        client.universe("u").assign({ "user_id" => "u_1" })
+        client.universe("u").assign({ "user_id" => "u_1" })
+      end
+      expect(bodies.length).to eq(1) # only the first assign posts
     end
 
-    it "is a no-op when the user is not enrolled (experiment not running)" do
+    it "is a no-op when the unit is not enrolled (experiment not running)" do
       stopped = running_exp.dup
       stopped["experiments"]["exp"] = running_exp["experiments"]["exp"].merge("status" => "stopped")
       client = live_client_with(stopped)
-      bodies = capture_collect(client) { client.log_exposure("u_1", "exp") }
+      bodies = capture_collect(client) { client.universe("u").assign({ "user_id" => "u_1" }) }
       expect(bodies).to be_empty
     end
 
     it "is a no-op in test mode" do
       client = Shipeasy::Engine.for_testing
+      client.send(:load_snapshot, {}, running_exp)
       expect(client).not_to receive(:post)
-      expect(client.log_exposure("u_1", "exp")).to be_nil
+      a = client.universe("u").assign({ "user_id" => "u_1" })
+      expect(a.enrolled?).to be(true) # enrolled, but no exposure posted
     end
   end
 
@@ -174,8 +179,8 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
 
     it "absent store ⇒ deterministic (no persistence)" do
       client = Shipeasy::Engine.from_snapshot(experiments: exps)
-      first  = client.get_experiment("exp", user, {}).group
-      second = client.get_experiment("exp", user, {}).group
+      first  = client.universe("u").assign(user).group
+      second = client.universe("u").assign(user).group
       expect(first).to eq(second) # deterministic regardless
     end
 
@@ -185,9 +190,9 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
         api_key: "k", disable_telemetry: true, sticky_store: store
       )
       client.send(:load_snapshot, {}, exps)
-      result = client.get_experiment("exp", user, {})
+      a = client.universe("u").assign(user)
       entry = store.get("u_42")["exp"]
-      expect(entry["g"]).to eq(result.group)
+      expect(entry["g"]).to eq(a.group)
       expect(entry["s"]).to eq(salt8)
     end
 
@@ -204,10 +209,10 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
         api_key: "k", disable_telemetry: true, sticky_store: seeded
       )
       client.send(:load_snapshot, {}, shrunk)
-      result = client.get_experiment("exp", user, {})
-      expect(result.in_experiment).to eq(true)
-      expect(result.group).to eq("treatment")
-      expect(result.params).to eq({ "v" => 1 })
+      a = client.universe("u").assign(user)
+      expect(a.enrolled?).to eq(true)
+      expect(a.group).to eq("treatment")
+      expect(a.get("v")).to eq(1)
     end
 
     it "re-buckets and overwrites on a salt-prefix mismatch" do
@@ -218,10 +223,10 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
         api_key: "k", disable_telemetry: true, sticky_store: stale
       )
       client.send(:load_snapshot, {}, exps)
-      result = client.get_experiment("exp", user, {})
+      a = client.universe("u").assign(user)
       # Overwritten with the current salt prefix.
       expect(stale.get("u_42")["exp"]["s"]).to eq(salt8)
-      expect(stale.get("u_42")["exp"]["g"]).to eq(result.group)
+      expect(stale.get("u_42")["exp"]["g"]).to eq(a.group)
     end
 
     it "re-buckets when the stored group no longer exists in the experiment" do
@@ -232,9 +237,9 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
         api_key: "k", disable_telemetry: true, sticky_store: gone
       )
       client.send(:load_snapshot, {}, exps)
-      result = client.get_experiment("exp", user, {})
-      expect(%w[control treatment]).to include(result.group)
-      expect(gone.get("u_42")["exp"]["g"]).to eq(result.group)
+      a = client.universe("u").assign(user)
+      expect(%w[control treatment]).to include(a.group)
+      expect(gone.get("u_42")["exp"]["g"]).to eq(a.group)
     end
   end
 end

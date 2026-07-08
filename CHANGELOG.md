@@ -1,5 +1,50 @@
 # Changelog
 
+## 3.0.0 (2026-07-08)
+
+### Breaking — experiments are now read by universe, not by name
+
+The whole experiment read surface is replaced. A **universe is a mutual-exclusion
+pool**: a unit is enrolled in **at most one** experiment in it, so you ask a
+universe for an assignment instead of naming an experiment. `get_experiment` and
+`log_exposure` are **removed** from both `Shipeasy::Client` and `Shipeasy::Engine`.
+
+```ruby
+# Before (removed):
+result = flags.get_experiment("checkout_color", { button_color: "red" })
+if result.in_experiment && result.group == "treatment"
+  render(result.params[:button_color])
+end
+flags.log_exposure("checkout_color")
+
+# After — bound Client (user bound at construction, no user arg):
+exp = flags.universe("checkout").assign
+render(exp.get("button_color", "red"))   # auto-logs a single exposure when enrolled
+
+# After — Engine (advanced; pass the user):
+exp = engine.universe("checkout").assign(user)
+```
+
+- **`universe(name).assign`** returns an `Shipeasy::SDK::Eval::Assignment`:
+  - `#name` — the experiment the unit landed in, or `nil` when not enrolled.
+  - `#group` — the assigned variant, or `nil` when not enrolled.
+  - `#enrolled?` — boolean (`group` is non-nil).
+  - `#get(field, fallback = nil)` — resolves **variant override ?? universe
+    default ?? fallback**. Works even when not enrolled (you get the universe
+    default), because the universe now owns the param schema + defaults. No more
+    `default_params`/`decode`.
+- **Auto-exposure.** `assign` logs a single exposure when the unit is enrolled
+  (deduped per process). The manual `log_exposure` primitive is gone — reading
+  *is* the exposure. Still a no-op in test/offline mode.
+- **Mutual exclusion (pooled assignment), per-experiment holdout gates, reserved
+  headroom, and universe-default ⊕ variant param merge** are now honoured by
+  local eval, matching the edge. The `evaluate` / `bootstrap_script_tag` SSR
+  payload gains a top-level `universes` defaults map and a `universe` field per
+  experiment.
+- The internal `Shipeasy.override_experiment` / `override_experiment` test seams
+  are unchanged (still experiment-keyed) and surface through `assign` when the
+  experiment exists in the loaded blob.
+
 ## 2.5.0 (2026-07-08)
 
 ### Added

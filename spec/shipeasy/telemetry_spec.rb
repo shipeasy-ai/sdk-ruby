@@ -16,7 +16,7 @@ RSpec.describe Shipeasy::SDK::Telemetry do
     )
     client.get_flag("g", {})
     client.get_config("c")
-    client.get_experiment("e", {}, {})
+    client.universe("e").assign({})
 
     expect(sent.size).to eq(3)
     expect(sent).to include(a_string_ending_with("/gate/g"))
@@ -33,7 +33,7 @@ RSpec.describe Shipeasy::SDK::Telemetry do
     )
     client.get_flag("g", {})
     client.get_config("c")
-    client.get_experiment("e", {}, {})
+    client.universe("e").assign({})
 
     expect(sent).to be_empty
   end

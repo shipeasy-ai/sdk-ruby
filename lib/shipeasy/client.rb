@@ -4,7 +4,7 @@ module Shipeasy
   #
   #   flags = Shipeasy::Client.new(current_user)
   #   flags.get_flag("new_checkout")          # NO user arg — bound at construction
-  #   flags.get_experiment("price_test", { price: 9 })
+  #   flags.universe("checkout").assign       # NO user arg — bound at construction
   #
   # It is cheap: it delegates every evaluation to the single global engine built
   # by `Shipeasy.configure { … }`. It does NOT open its own HTTP connection,
@@ -62,11 +62,31 @@ module Shipeasy
       default
     end
 
-    def get_experiment(name, default_params, decode = nil)
-      @engine.get_experiment(name, @attributes, default_params, decode)
-    rescue StandardError => e
-      Shipeasy::Logging.error "[shipeasy] Client#get_experiment('#{name}') failed — returning safe default: #{e.message}"
-      Shipeasy::SDK::Eval::ExperimentResult.new(in_experiment: false, group: "control", params: default_params)
+    # Assign the bound user within a universe: `client.universe("checkout").assign`.
+    # A universe is a mutual-exclusion pool — the unit lands in at most one
+    # experiment. Returns a reusable handle whose `assign` takes NO user arg (the
+    # user is bound at construction) and forwards the bound attributes to the
+    # engine. `assign` auto-logs a single deduped exposure when enrolled and
+    # returns an Eval::Assignment (never raises).
+    def universe(name)
+      BoundUniverseHandle.new(@engine, name, @attributes)
+    end
+
+    # Returned by Client#universe. Binds the universe name AND the client's
+    # already-resolved attributes, so `assign` needs no user argument.
+    class BoundUniverseHandle
+      def initialize(engine, name, attributes)
+        @engine     = engine
+        @name       = name
+        @attributes = attributes
+      end
+
+      def assign
+        @engine.assign_universe(@name, @attributes)
+      rescue StandardError => e
+        Shipeasy::Logging.error "[shipeasy] Client#universe('#{@name}').assign failed — returning not-enrolled: #{e.message}"
+        Shipeasy::SDK::Eval::Assignment.new(nil, nil, {})
+      end
     end
 
     # Killswitches are not user-scoped; forwarded straight to the engine.
@@ -82,13 +102,6 @@ module Shipeasy
       @engine.track(id, event_name, props)
     rescue StandardError => e
       Shipeasy::Logging.error "[shipeasy] Client#track('#{event_name}') failed: #{e.message}"
-      nil
-    end
-
-    def log_exposure(experiment_name)
-      @engine.log_exposure(@attributes, experiment_name)
-    rescue StandardError => e
-      Shipeasy::Logging.error "[shipeasy] Client#log_exposure('#{experiment_name}') failed: #{e.message}"
       nil
     end
   end

@@ -92,6 +92,26 @@ module Shipeasy
 
       ExperimentResult = Struct.new(:in_experiment, :group, :params, keyword_init: true)
 
+      # Flatten a universe param schema (`[{ "name", "type", "default" }, ...]`)
+      # to a plain `name => default` map — the defaults `assign()` layers under a
+      # variant's override map. Returns nil for a null/empty schema so the merge
+      # short-circuits. Mirrors the TS reference / @shipeasy/core.
+      def self.param_defaults_from_schema(schema)
+        return nil if schema.nil? || schema.empty?
+        schema.each_with_object({}) do |p, h|
+          name = p["name"] || p[:name]
+          h[name] = p.key?("default") ? p["default"] : p[:default]
+        end
+      end
+
+      # `universeDefaults ⊕ variantOverride` — a variant inherits every universe
+      # default it doesn't explicitly override. A nil defaults map short-circuits
+      # to the variant params (dup'd) alone.
+      def self.merge_params(param_defaults, group_params)
+        gp = group_params || {}
+        param_defaults ? param_defaults.merge(gp) : gp.dup
+      end
+
       # exp_name + sticky_store are optional so existing callers stay deterministic.
       # When a sticky_store is passed, an enrolled unit whose stored salt prefix
       # still matches skips the allocation gate (so a shrinking allocation keeps
@@ -99,8 +119,23 @@ module Shipeasy
       # pick is persisted via store.set; a salt mismatch / missing stored group
       # falls through to re-bucket + overwrite. Mirrors the TS reference
       # (doc 20 §2). exp_name is the key under which the entry is stored.
+      #
+      # Pooling / holdout-gate / reserved-headroom / universe param-default merge
+      # (doc 20 §B) are layered in here so both the low-level parity path and the
+      # universe assign() path share ONE classify. The added steps are all guarded
+      # by presence checks, so a legacy blob (no hashVersion/pool/reserved) behaves
+      # exactly as before.
       def self.eval_experiment(exp, flags_blob, exps_blob, user, exp_name: nil, sticky_store: nil)
+        universe_name  = exp && exp["universe"]
+        universe       = exps_blob&.dig("universes", universe_name)
+        param_defaults = param_defaults_from_schema(universe && (universe["param_schema"] || universe[:param_schema]))
+
         not_in = ExperimentResult.new(in_experiment: false, group: "control", params: nil)
+        as_group = lambda do |g|
+          ExperimentResult.new(
+            in_experiment: true, group: g["name"], params: merge_params(param_defaults, g["params"]),
+          )
+        end
 
         return not_in unless exp && exp["status"] == "running"
 
@@ -114,12 +149,22 @@ module Shipeasy
         uid = pick_identifier(user, bucket_by)
         return not_in unless uid
 
-        universe_name = exp["universe"]
-        universe = exps_blob&.dig("universes", universe_name)
+        # One segment in the universe's shared [0, 10000) hash space. The holdout
+        # carve-out AND every experiment's pool slice are disjoint ranges of THIS
+        # segment — that's what makes "held out / taken / free" a real partition.
+        universe_seg = murmur3("#{universe_name}:#{uid}") % 10000
+
         holdout = universe&.dig("holdout_range")
         if holdout
-          seg = murmur3("#{universe_name}:#{uid}") % 10000
-          return not_in if seg >= holdout[0] && seg <= holdout[1]
+          return not_in if universe_seg >= holdout[0] && universe_seg <= holdout[1]
+        end
+
+        # Holdout gate: a passing gate holds the unit out of every experiment in
+        # the universe (mirrors the universe carve-out, but gate-driven).
+        holdout_gate = exp["holdoutGate"]
+        if holdout_gate && !holdout_gate.to_s.empty?
+          gate = flags_blob&.dig("gates", holdout_gate)
+          return not_in if gate && eval_gate(gate, user)
         end
 
         salt          = exp["salt"]
@@ -134,23 +179,86 @@ module Shipeasy
           entry = (sticky_store.get(uid) || {})[exp_name]
           if entry && entry["s"] == salt8
             g = groups.find { |x| x["name"] == entry["g"] }
-            return ExperimentResult.new(in_experiment: true, group: g["name"], params: g["params"]) if g
+            return as_group.call(g) if g
           end
         end
 
-        return not_in if murmur3("#{salt}:alloc:#{uid}") % 10000 >= allocation_pct
+        # Allocation. Pooled (hashVersion >= 2 with a slice) gives real mutual
+        # exclusion: the unit's universe segment must fall in the claimed range.
+        # Legacy falls back to an independent per-experiment salt so siblings
+        # overlap freely (the existing parity path).
+        hash_version = exp["hashVersion"] || exp[:hashVersion] || 1
+        pool_offset  = exp["poolOffsetBp"] || exp[:poolOffsetBp]
+        pool_size    = exp["poolSizeBp"] || exp[:poolSizeBp]
+        pooled       = hash_version >= 2 && !pool_offset.nil? && !pool_size.nil? && pool_size > 0
+        if pooled
+          lo = pool_offset
+          hi = pool_offset + pool_size
+          return not_in if universe_seg < lo || universe_seg >= hi
+        else
+          return not_in if murmur3("#{salt}:alloc:#{uid}") % 10000 >= allocation_pct
+        end
 
+        # Group split over [0, usable) where usable = 10000 - reserved; a unit in
+        # the reserved tail is left unassigned so an appended variant can absorb it.
+        reserved = (exp["reservedHeadroomBp"] || exp[:reservedHeadroomBp] || 0)
+        reserved = 0 if reserved < 0
+        reserved = 10000 if reserved > 10000
+        usable = 10000 - reserved
         group_hash = murmur3("#{salt}:group:#{uid}") % 10000
+        return not_in if group_hash >= usable
+
         cumulative = 0
         groups.each_with_index do |g, i|
           cumulative += g["weight"]
           if group_hash < cumulative || i == groups.length - 1
             sticky_store.set(uid, exp_name, { "g" => g["name"], "s" => salt8 }) if sticky_store && exp_name
-            return ExperimentResult.new(in_experiment: true, group: g["name"], params: g["params"])
+            return as_group.call(g)
           end
         end
 
         not_in
+      end
+
+      # The result of `universe(name).assign(user)` — a unit's standing in a
+      # universe (a mutual-exclusion pool, so it lands in at most one experiment).
+      # Never raises: an un-enrolled unit still resolves `get` to the universe
+      # defaults (or the caller's fallback). Reading is side-effect free — the
+      # single exposure is logged once by assign() when the unit is enrolled.
+      class Assignment
+        # The experiment the unit landed in, or nil when not enrolled.
+        attr_reader :name
+        # The assigned variant/group name, or nil when not enrolled.
+        attr_reader :group
+
+        # +params+ is already merged (universeDefaults ⊕ variantOverride) when
+        # enrolled; defaults-only (or {}) when not.
+        def initialize(name, group, params)
+          @name   = name
+          @group  = group
+          @params = params || {}
+        end
+
+        # True iff the unit is enrolled in an experiment in this universe.
+        def enrolled?
+          !@group.nil?
+        end
+
+        # Read a resolved param: the assigned variant's override, else the
+        # universe default, else +fallback+. Works even when not enrolled (the
+        # variant layer is absent, so you get universeDefault ?? fallback).
+        # Looks up both string and symbol keys.
+        def get(field, fallback = nil)
+          if @params.key?(field)
+            @params[field]
+          elsif field.respond_to?(:to_s) && @params.key?(field.to_s)
+            @params[field.to_s]
+          elsif field.respond_to?(:to_sym) && @params.key?(field.to_sym)
+            @params[field.to_sym]
+          else
+            fallback
+          end
+        end
       end
     end
   end

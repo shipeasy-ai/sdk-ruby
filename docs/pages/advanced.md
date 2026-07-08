@@ -1,20 +1,22 @@
 # Advanced
 
-## Manual exposure — `log_exposure`
+## Exposure logging (auto)
 
-The server is stateless and never auto-logs an experiment exposure. Call
-`log_exposure` at the moment you actually present the treatment, on the bound
-`Client` (no user argument):
+Experiment exposure is **automatic**: `universe(name).assign` logs a single
+exposure event the moment a unit is enrolled — reading *is* the exposure, so
+there is no separate `log_exposure` call.
 
 ```ruby
 # construct once per callsite (cheap; binds the user)
 flags = Shipeasy::Client.new(current_user)
 
-flags.log_exposure("checkout_cta")
+flags.universe("checkout").assign   # enrolled → one exposure POSTed (fire-and-forget)
 ```
 
-It re-evaluates the experiment and, **only if enrolled**, POSTs a single exposure
-(fire-and-forget). No-op in test mode or when the user isn't enrolled.
+The exposure is **deduped per process** per `(unit, experiment, group)`, so
+repeated `assign` calls in one server don't spam `/collect`. It's a no-op when
+the unit isn't enrolled and under
+[`configure_for_testing` / `configure_for_offline`](testing.md).
 
 ## Private attributes
 

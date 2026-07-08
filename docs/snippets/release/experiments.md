@@ -1,31 +1,23 @@
-Get the assignment for `{{EXPERIMENT_KEY}}`, log exposure, and track the
-`{{SUCCESS_EVENT}}` conversion — all on the bound Client. Assumes
-`Shipeasy.configure` ran at startup — see Installation.
-
-### Read the assignment
+Assign a unit within a universe (a mutual-exclusion pool — the unit lands in <=1
+experiment), read the assigned params, then record the conversion event on the
+same bound `Client`. Assumes `Shipeasy.configure` ran at startup — see
+Installation.
 
 ```ruby
 # construct once per callsite (cheap; binds the user)
 flags = Shipeasy::Client.new(current_user)
 
-# get_experiment(name, default_params, decode = nil)
-#   name           — the experiment key (required)
-#   default_params — params returned when NOT enrolled (the control shape)
-#   decode         — optional proc run on the resolved params
-result = flags.get_experiment("{{EXPERIMENT_KEY}}", { label: "Buy now" })
+# universe(name).assign → Shipeasy::SDK::Eval::Assignment
+#   name          — the UNIVERSE name (not an experiment); the unit lands in <=1 experiment
+#   .name         — the experiment the unit landed in, or nil when not enrolled
+#   .group        — the assigned variant, or nil when not enrolled
+#   .enrolled?    — true iff enrolled (group is non-nil)
+#   .get(field, fallback = nil) — variant override ?? universe default ?? fallback
+# assign takes no user arg — the user is bound at construction. It auto-logs a
+# single deduped exposure when the unit is enrolled.
+assignment = flags.universe("{{EXPERIMENT_KEY}}").assign
 
-if result.in_experiment && result.group == "treatment"
-  render_cta(result.params[:label])
-end
-```
-
-### Log exposure + track the conversion
-
-```ruby
-flags = Shipeasy::Client.new(current_user)
-
-# call when you actually present the treatment (no user arg — bound)
-flags.log_exposure("{{EXPERIMENT_KEY}}")
+render_cta(assignment.get("label", "Buy now"))   # always safe — falls back when not enrolled
 
 # track the conversion on the same bound Client (unit derived from the bound user)
 #   track(event_name, props = {})

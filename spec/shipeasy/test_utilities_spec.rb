@@ -61,28 +61,49 @@ RSpec.describe "Shipeasy::Engine test utilities" do
   end
 
   describe "#override_experiment" do
-    it "returns an in-experiment ExperimentResult from get_experiment" do
+    # An override surfaces through assign() when the experiment exists (mapped to
+    # its universe) in the loaded blob — the override still wins its classify.
+    def client_with_running_exp
       client = Shipeasy::Engine.for_testing
-      client.override_experiment("checkout_cta", "treatment", { label: "Buy now" })
-
-      result = client.get_experiment("checkout_cta", { user_id: "u_1" }, { label: "default" })
-      expect(result).to be_a(Shipeasy::SDK::Eval::ExperimentResult)
-      expect(result.in_experiment).to eq(true)
-      expect(result.group).to eq("treatment")
-      expect(result.params).to eq({ label: "Buy now" })
+      client.send(:load_snapshot, {}, {
+        "universes" => { "checkout" => {} },
+        "experiments" => {
+          "checkout_cta" => {
+            "universe" => "checkout", "status" => "running", "salt" => "s",
+            "allocationPct" => 10000,
+            "groups" => [{ "name" => "control", "weight" => 10000, "params" => {} }],
+          },
+        },
+      })
+      client
     end
 
-    it "honors a decode proc on the overridden params" do
-      client = Shipeasy::Engine.for_testing
-      client.override_experiment("exp", "treatment", { "n" => 3 })
-      result = client.get_experiment("exp", { user_id: "u_1" }, {}, ->(p) { p["n"] + 1 })
-      expect(result.params).to eq(4)
+    it "returns an in-experiment Assignment from universe().assign" do
+      client = client_with_running_exp
+      client.override_experiment("checkout_cta", "treatment", { label: "Buy now" })
+
+      a = client.universe("checkout").assign({ user_id: "u_1" })
+      expect(a).to be_a(Shipeasy::SDK::Eval::Assignment)
+      expect(a.enrolled?).to eq(true)
+      expect(a.name).to eq("checkout_cta")
+      expect(a.group).to eq("treatment")
+      expect(a.get("label")).to eq("Buy now")
     end
   end
 
   describe "#clear_overrides" do
     it "resets all overrides" do
       client = Shipeasy::Engine.for_testing
+      client.send(:load_snapshot, {}, {
+        "universes" => { "u" => {} },
+        "experiments" => {
+          "e" => {
+            "universe" => "u", "status" => "running", "salt" => "s",
+            "allocationPct" => 0,
+            "groups" => [{ "name" => "treatment", "weight" => 10000, "params" => { "a" => 1 } }],
+          },
+        },
+      })
       client.override_flag("f", true)
       client.override_config("c", "x")
       client.override_experiment("e", "treatment", { a: 1 })
@@ -91,9 +112,9 @@ RSpec.describe "Shipeasy::Engine test utilities" do
 
       expect(client.get_flag("f", {})).to eq(false)
       expect(client.get_config("c")).to be_nil
-      result = client.get_experiment("e", { user_id: "u_1" }, { default: true })
-      expect(result.in_experiment).to eq(false)
-      expect(result.params).to eq({ default: true })
+      # override gone → the experiment's real (0% allocation) classify runs → not enrolled
+      a = client.universe("u").assign({ user_id: "u_1" })
+      expect(a.enrolled?).to eq(false)
     end
   end
 

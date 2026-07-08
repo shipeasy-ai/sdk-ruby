@@ -1,51 +1,55 @@
-# A/B experiments — `get_experiment` + `track`
+# A/B experiments — `universe(name).assign` + `track`
 
-After [`Shipeasy.configure`](configuration.md), an experiment is **end-to-end
-through the bound `Shipeasy::Client.new(user)`** — read the assignment, log
-exposure, and track the conversion, all on the same handle, with no user
-argument.
+Experiments are read by **universe**. A universe is a mutual-exclusion pool: a
+unit lands in **at most one** experiment in it. `assign` picks that experiment
+(if any), returns the assigned group plus its resolved parameters, and auto-logs
+a single exposure. You read parameters with `assign.get(field, fallback)` and
+record a conversion with `track` — all on the same bound
+[`Shipeasy::Client.new(user)`](configuration.md), with no user argument.
 
-## Reading an experiment
-
-`get_experiment(name, default_params, decode = nil)` returns an
-`Eval::ExperimentResult` with three fields:
-
-- `result.in_experiment` — `true` if the user is enrolled (not in the holdout /
-  outside allocation).
-- `result.group` — the assigned variation group (e.g. `"control"` /
-  `"treatment"`).
-- `result.params` — the variant params; falls back to `default_params` when the
-  user isn't enrolled (or the experiment is absent).
+## Assigning within a universe
 
 ```ruby
 # construct once per callsite (cheap; binds the user)
 flags = Shipeasy::Client.new(current_user)
 
-result = flags.get_experiment("checkout_cta", { label: "Buy now" })
+# Ask the UNIVERSE, not the experiment: the unit lands in <=1 experiment in it.
+assignment = flags.universe("checkout").assign
 
-if result.in_experiment && result.group == "treatment"
-  render_cta(result.params[:label])
+# Read a param: variant override ?? universe default ?? your fallback.
+if assignment.get("button_color", "red") == "green"
+  render_green_cta
 end
 ```
 
-An optional `decode` proc projects the params for an enrolled user (a decode
-failure falls back to `control` + `default_params`).
+On the server the user is bound at construction, so `assign` takes no argument.
+`assign` auto-logs a single (deduped) exposure when the unit is enrolled.
 
-## Logging exposure — `log_exposure`
+## The `Assignment` handle
 
-The server is stateless and never auto-logs exposure. Call `log_exposure` at the
-point you actually present the treatment (parity with the browser's
-auto-exposure). The bound `Client` derives the user from the same bound
-attributes — no user argument:
+`universe(name).assign` returns a `Shipeasy::SDK::Eval::Assignment` — never
+raises:
+
+- `assignment.name` — the experiment the unit landed in, or `nil` when not
+  enrolled.
+- `assignment.group` — the assigned variation group (e.g. `"control"` /
+  `"treatment"`), or `nil` when not enrolled.
+- `assignment.enrolled?` — `true` iff enrolled (`group` is non-nil).
+- `assignment.get(field, fallback = nil)` — resolves **variant override ??
+  universe default ?? fallback**. Works even when not enrolled (you get the
+  universe default), so reading a param is always safe.
 
 ```ruby
-result = flags.get_experiment("checkout_cta", { label: "Buy now" })
-flags.log_exposure("checkout_cta")   # at the decision point
+assignment = flags.universe("checkout").assign
+if assignment.enrolled?
+  # assignment.group is the variant, e.g. "treatment"
+end
+label = assignment.get("primary_label", "Sign up")   # never raises
 ```
 
-It re-evaluates and, if the bound user is enrolled, POSTs a single `exposure`
-event; otherwise it's a no-op (also a no-op under
-[`configure_for_testing` / `configure_for_offline`](testing.md)).
+When the unit isn't enrolled (targeting / holdout / allocation), `enrolled?` is
+`false`, `name` and `group` are `nil`, and `get(field, fallback)` returns the
+universe default if there is one, else your `fallback`.
 
 ## Tracking conversion events — `track`
 
@@ -63,3 +67,9 @@ flags.track("{{SUCCESS_EVENT}}", { revenue: 49.99 })
 
 `track` is fire-and-forget and a no-op in test/offline mode. If the bound
 attributes carry no `user_id` or `anonymous_id`, the call is a no-op.
+
+## Exposure logging
+
+By default `assign` auto-logs a single (deduped) exposure when the unit is
+enrolled — reading *is* the exposure. It's fire-and-forget and a no-op under
+[`configure_for_testing` / `configure_for_offline`](testing.md).

@@ -16,23 +16,37 @@ RSpec.describe "Shipeasy package-level configure family" do
         configs:     { "billing_copy" => { "title" => "Welcome" } },
         experiments: { "checkout_button" => ["treatment", { "color" => "green" }] },
       )
+      # The experiment override surfaces through assign() only when the experiment
+      # exists (mapped to its universe) in the loaded blob — seed one.
+      Shipeasy.engine.send(:load_snapshot, {}, {
+        "universes" => { "checkout" => {} },
+        "experiments" => {
+          "checkout_button" => {
+            "universe" => "checkout", "status" => "running", "salt" => "s",
+            "allocationPct" => 10000,
+            "groups" => [{ "name" => "control", "weight" => 10000, "params" => {} }],
+          },
+        },
+      })
 
       client = Shipeasy::Client.new("user_id" => "u_1")
       expect(client.get_flag("new_checkout")).to be(true)
       expect(client.get_config("billing_copy")).to eq("title" => "Welcome")
 
-      r = client.get_experiment("checkout_button", { "color" => "blue" })
-      expect(r.in_experiment).to be(true)
-      expect(r.group).to eq("treatment")
-      expect(r.params).to eq("color" => "green")
+      a = client.universe("checkout").assign
+      expect(a.enrolled?).to be(true)
+      expect(a.name).to eq("checkout_button")
+      expect(a.group).to eq("treatment")
+      expect(a.get("color")).to eq("green")
     end
 
-    it "is no-network: track / log_exposure are no-ops in test mode" do
+    it "is no-network: track / universe().assign are no-ops in test mode" do
       Shipeasy.configure_for_testing(flags: {})
       client = Shipeasy::Client.new("user_id" => "u_1")
       expect(Thread).not_to receive(:new)
       expect(client.track("purchase", { "amount" => 49 })).to be_nil
-      expect(client.log_exposure("checkout_button")).to be_nil
+      # No blob, no experiments → not enrolled, no exposure thread spawned.
+      expect(client.universe("checkout").assign.enrolled?).to be(false)
     end
 
     it "REPLACES the prior config (unlike first-config-wins configure)" do
@@ -114,6 +128,16 @@ RSpec.describe "Shipeasy package-level configure family" do
   describe "package-level override helpers" do
     it "flip values on the spot and clear_overrides drops the seed in test mode" do
       Shipeasy.configure_for_testing(flags: { "new_checkout" => true })
+      Shipeasy.engine.send(:load_snapshot, {}, {
+        "universes" => { "checkout" => {} },
+        "experiments" => {
+          "checkout_button" => {
+            "universe" => "checkout", "status" => "running", "salt" => "s",
+            "allocationPct" => 10000,
+            "groups" => [{ "name" => "treatment", "weight" => 10000, "params" => {} }],
+          },
+        },
+      })
 
       Shipeasy.override_flag("new_checkout", false)
       Shipeasy.override_config("billing_copy", { "title" => "B" })
@@ -122,7 +146,7 @@ RSpec.describe "Shipeasy package-level configure family" do
       c = Shipeasy::Client.new("user_id" => "u_1")
       expect(c.get_flag("new_checkout")).to be(false)
       expect(c.get_config("billing_copy")).to eq("title" => "B")
-      expect(c.get_experiment("checkout_button", {}).group).to eq("control")
+      expect(c.universe("checkout").assign.group).to eq("control")
 
       Shipeasy.clear_overrides
       # test mode has no blob underneath → the seed is gone too

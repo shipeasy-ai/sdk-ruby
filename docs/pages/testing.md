@@ -21,12 +21,15 @@ client = Shipeasy::Client.new({ "user_id" => "u_123" })
 client.get_flag("new_checkout")              # => true
 client.get_config("billing_copy")            # => { "title" => "Welcome" }
 
-result = client.get_experiment("checkout_button", { "color" => "blue" })
-result.in_experiment                         # => true
-result.group                                 # => "treatment"
-result.params                                # => { "color" => "green" }
+# An experiment override surfaces through universe(name).assign once the loaded
+# blob maps that experiment to its universe (an offline snapshot does this; a
+# bare configure_for_testing has no blob). Read via the universe:
+assignment = client.universe("checkout").assign
+assignment.enrolled?                         # => true
+assignment.group                             # => "treatment"
+assignment.get("color")                      # => "green"
 
-# track / log_exposure are no-ops in test mode — safe to call, send nothing
+# track / assign exposures are no-ops in test mode — safe to call, send nothing
 client.track("purchase", { amount: 49 })
 ```
 

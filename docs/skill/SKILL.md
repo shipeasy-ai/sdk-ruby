@@ -1,6 +1,6 @@
 ---
 name: shipeasy-ruby
-description: Use Shipeasy (feature flags, configs, kill switches, A/B experiments, i18n) from Ruby. Covers Shipeasy.configure + Client.new(user), get_flag/get_config/get_experiment/get_killswitch, track, testing, OpenFeature.
+description: Use Shipeasy (feature flags, configs, kill switches, A/B experiments, i18n) from Ruby. Covers Shipeasy.configure + Client.new(user), get_flag/get_config/universe(name).assign/get_killswitch, track, testing, OpenFeature.
 ---
 
 # Shipeasy Ruby SDK
@@ -46,8 +46,10 @@ the default (one-shot fetch, no thread) is serverless-friendly.
 
 ## Evaluate (bound `Client.new(user)` — NO user arg)
 
-Bind the user once per request, then call without re-passing it — `track` and
-`log_exposure` are on the bound client too, so experiments are end-to-end here:
+Bind the user once per request, then call without re-passing it — experiments
+are read by **universe** (a mutual-exclusion pool: the unit lands in <=1
+experiment), and `track` is on the same bound client, so experiments are
+end-to-end here:
 
 ```ruby
 flags = Shipeasy::Client.new(current_user)   # runs the attributes transform once
@@ -55,10 +57,13 @@ flags = Shipeasy::Client.new(current_user)   # runs the attributes transform onc
 flags.get_flag("new_checkout")               # bool; default: only when unresolved
 flags.get_config("button_color", default: "blue")
 flags.get_killswitch("payments")             # true = killed; optional switch_key
-result = flags.get_experiment("checkout_cta", { label: "Buy now" })
-# result.in_experiment / result.group / result.params
 
-flags.log_exposure("checkout_cta")           # at the decision point
+# Ask the UNIVERSE, not the experiment. Returns an Assignment (never raises):
+#   .name / .group  → nil when not enrolled ·  .enrolled?  → group non-nil
+#   .get(field, fallback = nil) → variant override ?? universe default ?? fallback
+assignment = flags.universe("checkout").assign   # auto-logs one deduped exposure when enrolled
+render_cta(assignment.get("label", "Buy now"))
+
 flags.track("purchase", { revenue: 49 })     # conversion / metric event
 ```
 

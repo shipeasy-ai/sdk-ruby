@@ -28,8 +28,8 @@ flags = Shipeasy::Client.new(current_user)
 
 flags.get_flag("new_checkout")                       # NO user arg — bound at construction
 flags.get_config("button_color")
-result = flags.get_experiment("checkout_cta", { label: "Buy" })
-flags.log_exposure("checkout_cta")                   # at the decision point
+assignment = flags.universe("checkout").assign       # <=1 experiment; auto-logs exposure
+assignment.get("label", "Buy")                       # variant ?? universe default ?? fallback
 flags.track("purchase", { revenue: 49 })             # on conversion
 flags.get_killswitch("payments")
 ```
@@ -42,8 +42,9 @@ argument on any call:
 - `get_flag(name, default: false)` · `get_flag_detail(name)`
 - `get_config(name, decode = nil, default: nil)`
 - `get_killswitch(name, switch_key = nil)`
-- `get_experiment(name, default_params, decode = nil)`
-- `log_exposure(experiment_name)` · `track(event_name, props = {})`
+- `universe(name).assign` → an `Assignment` (`.name` / `.group` / `.enrolled?` /
+  `.get(field, fallback = nil)`); auto-logs one deduped exposure when enrolled
+- `track(event_name, props = {})`
 
 So an experiment is **end-to-end Client-only**. Constructing a
 `Shipeasy::Client.new(user)` before `Shipeasy.configure` raises `Shipeasy::Error`.
@@ -65,7 +66,7 @@ After any of them, you read the same way: `Shipeasy::Client.new(user)`.
 - [flags](flags.md) — `get_flag` + `get_flag_detail`
 - [configs](configs.md) — `get_config`
 - [killswitches](killswitches.md) — `get_killswitch`, named switches
-- [experiments](experiments.md) — `get_experiment`, `log_exposure`, `track`
+- [experiments](experiments.md) — `universe(name).assign`, `track`
 - [i18n](i18n.md) — Rails view helpers + the SSR loader tag
 - [error-reporting](error-reporting.md) — `see()` structured reporting
 - [testing](testing.md) — `configure_for_testing`, `configure_for_offline`, overrides

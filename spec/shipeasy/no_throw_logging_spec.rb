@@ -36,17 +36,17 @@ RSpec.describe "Fail-safe runtime reads & leveled logging" do
       expect(result).to eq("fallback")
     end
 
-    it "returns a not-enrolled control result when a get_experiment decode raises" do
+    it "returns a not-enrolled Assignment (never raises) when the engine assign path blows up" do
       client = Shipeasy::Engine.for_testing
-      client.override_experiment("price_test", "treatment", { "price" => 9 })
-      boom = ->(_v) { raise "decode blew up" }
+      # Force an internal failure deep in the assign path; safe_run must swallow
+      # it and hand back the documented not-enrolled default.
+      allow(Shipeasy::SDK::Eval).to receive(:param_defaults_from_schema).and_raise("boom")
 
-      result = nil
-      expect { result = client.get_experiment("price_test", { user_id: "u_1" }, { "price" => 0 }, boom) }
-        .not_to raise_error
-      expect(result.in_experiment).to eq(false)
-      expect(result.group).to eq("control")
-      expect(result.params).to eq({ "price" => 0 })
+      a = nil
+      expect { a = client.universe("checkout").assign({ user_id: "u_1" }) }.not_to raise_error
+      expect(a.enrolled?).to eq(false)
+      expect(a.name).to be_nil
+      expect(a.group).to be_nil
     end
 
     it "guards the bound Client reads too (returns the default, no raise)" do

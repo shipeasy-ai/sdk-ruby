@@ -3,7 +3,7 @@
 # Every diagnostic the SDK emits from a *caught* error goes through here, so a
 # single `log_level` config option (default :warn) controls the SDK's stderr
 # output. The contract for the SDK's public RUNTIME methods (get_flag,
-# get_config, get_experiment, get_killswitch, track, log_exposure, see, …) is
+# get_config, universe(...).assign, get_killswitch, track, see, …) is
 # that they NEVER raise into product code — so logging itself is best-effort
 # too: a broken/throwing $stderr can never take down a flag read.
 #
