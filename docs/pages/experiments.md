@@ -2,9 +2,10 @@
 
 Experiments are read by **universe**. A universe is a mutual-exclusion pool: a
 unit lands in **at most one** experiment in it. `assign` picks that experiment
-(if any), returns the assigned group plus its resolved parameters, and auto-logs
-a single exposure. You read parameters with `assign.get(field, fallback)` and
-record a conversion with `track` — all on the same bound
+(if any) and returns the assigned group plus its resolved parameters — it's
+side-effect free. The exposure fires on the **first `get` read**, so reading a
+param *is* the exposure. You read parameters with `assign.get(field, fallback)`
+and record a conversion with `track` — all on the same bound
 [`Shipeasy::Client.new(user)`](configuration.md), with no user argument.
 
 ## Assigning within a universe
@@ -23,7 +24,8 @@ end
 ```
 
 On the server the user is bound at construction, so `assign` takes no argument.
-`assign` auto-logs a single (deduped) exposure when the unit is enrolled.
+`assign` itself logs nothing; the single (deduped) exposure fires on the first
+`get` read.
 
 ## The `Assignment` handle
 
@@ -35,9 +37,11 @@ raises:
 - `assignment.group` — the assigned variation group (e.g. `"control"` /
   `"treatment"`), or `nil` when not enrolled.
 - `assignment.enrolled?` — `true` iff enrolled (`group` is non-nil).
-- `assignment.get(field, fallback = nil)` — resolves **variant override ??
-  universe default ?? fallback**. Works even when not enrolled (you get the
-  universe default), so reading a param is always safe.
+- `assignment.get(field, fallback = nil, exposure: true)` — resolves **variant
+  override ?? universe default ?? fallback**. Works even when not enrolled (you
+  get the universe default), so reading a param is always safe. The first read
+  logs the exposure; pass `exposure: false` to peek at a param *without* logging
+  one.
 
 ```ruby
 assignment = flags.universe("checkout").assign
@@ -49,7 +53,8 @@ label = assignment.get("primary_label", "Sign up")   # never raises
 
 When the unit isn't enrolled (targeting / holdout / allocation), `enrolled?` is
 `false`, `name` and `group` are `nil`, and `get(field, fallback)` returns the
-universe default if there is one, else your `fallback`.
+universe default if there is one, else your `fallback` (and, not being enrolled,
+logs no exposure).
 
 ## Tracking conversion events — `track`
 
@@ -70,6 +75,15 @@ attributes carry no `user_id` or `anonymous_id`, the call is a no-op.
 
 ## Exposure logging
 
-By default `assign` auto-logs a single (deduped) exposure when the unit is
-enrolled — reading *is* the exposure. It's fire-and-forget and a no-op under
-[`configure_for_testing` / `configure_for_offline`](testing.md).
+The exposure fires on the **first `get` read** of an enrolled assignment, not at
+`assign` time — reading *is* the exposure. It's a single (deduped) event:
+deduped per process and durably per `(unit, experiment, group)` server-side, so
+re-reads and repeat runs don't double-count. It's fire-and-forget and a no-op
+under [`configure_for_testing` / `configure_for_offline`](testing.md).
+
+Pass `exposure: false` to peek at a param without logging one:
+
+```ruby
+# read for a log line / debug view — does NOT enroll the unit's exposure
+color = assignment.get("button_color", "red", exposure: false)
+```

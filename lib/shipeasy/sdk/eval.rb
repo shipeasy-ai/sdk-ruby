@@ -125,6 +125,28 @@ module Shipeasy
       # universe assign() path share ONE classify. The added steps are all guarded
       # by presence checks, so a legacy blob (no hashVersion/pool/reserved) behaves
       # exactly as before.
+      # Resolve a forced override group for +uid+ (spec step 1): ID overrides
+      # (tier 1) beat cohort/GK overrides (tier 2); within cohort overrides the
+      # first (pre-sorted by priority) gate that passes wins. Returns the forced
+      # group name or nil. The caller applies eligibility + group-existence
+      # (forced-but-gated). Mirrors @shipeasy/core resolveForcedGroup.
+      def self.resolve_forced_group(exp, uid, flags_blob, user)
+        id_overrides = exp["idOverrides"] || exp[:idOverrides]
+        if id_overrides
+          by_id = id_overrides[uid]
+          return by_id if by_id && !by_id.to_s.empty?
+        end
+        cohort_overrides = exp["cohortOverrides"] || exp[:cohortOverrides]
+        if cohort_overrides
+          cohort_overrides.each do |co|
+            gname = co["gate"] || co[:gate]
+            gate = flags_blob&.dig("gates", gname)
+            return (co["group"] || co[:group]) if gate && eval_gate(gate, user)
+          end
+        end
+        nil
+      end
+
       def self.eval_experiment(exp, flags_blob, exps_blob, user, exp_name: nil, sticky_store: nil)
         universe_name  = exp && exp["universe"]
         universe       = exps_blob&.dig("universes", universe_name)
@@ -171,6 +193,21 @@ module Shipeasy
         allocation_pct = exp["allocationPct"] || 0
         groups = exp["groups"] || []
         salt8 = (salt || "")[0, 8]
+
+        # Durable overrides (spec step 1, forced-but-gated). Reached only after the
+        # unit passes targeting and is not held out, so an override may now pin the
+        # group — bypassing allocation + the weighted pick but NOT the gates above.
+        # ID overrides (tier 1) beat cohort/GK overrides (tier 2); a forced group
+        # that no longer exists falls through to normal allocation. No-op when
+        # unconfigured, so v1/v2 stay byte-identical. Mirrors @shipeasy/core.
+        forced = resolve_forced_group(exp, uid, flags_blob, user)
+        if forced
+          g = groups.find { |x| x["name"] == forced }
+          if g
+            sticky_store.set(uid, exp_name, { "g" => forced, "s" => salt8 }) if sticky_store && exp_name
+            return as_group.call(g)
+          end
+        end
 
         # Sticky short-circuit: an enrolled unit whose stored salt prefix still
         # matches skips allocation and returns the stored group. If the stored
@@ -232,14 +269,19 @@ module Shipeasy
         attr_reader :group
 
         # +params+ is already merged (universeDefaults ⊕ variantOverride) when
-        # enrolled; defaults-only (or {}) when not.
-        def initialize(name, group, params)
-          @name   = name
-          @group  = group
-          @params = params || {}
+        # enrolled; defaults-only (or {}) when not. +on_expose+ fires the single
+        # exposure the first time an enrolled param is read (nil when not
+        # enrolled — nothing to expose); deduped downstream.
+        def initialize(name, group, params, on_expose = nil)
+          @name      = name
+          @group     = group
+          @params    = params || {}
+          @on_expose = on_expose
+          @exposed   = false
         end
 
         # True iff the unit is enrolled in an experiment in this universe.
+        # Reading it does NOT log an exposure (only +get+ of a param does).
         def enrolled?
           !@group.nil?
         end
@@ -248,7 +290,15 @@ module Shipeasy
         # universe default, else +fallback+. Works even when not enrolled (the
         # variant layer is absent, so you get universeDefault ?? fallback).
         # Looks up both string and symbol keys.
-        def get(field, fallback = nil)
+        #
+        # Exposure is logged **on read** (spec step 7): the first enrolled read
+        # fires the single exposure; pass +exposure: false+ to read without
+        # logging (peek).
+        def get(field, fallback = nil, exposure: true)
+          if exposure && !@exposed && @on_expose
+            @exposed = true
+            @on_expose.call
+          end
           if @params.key?(field)
             @params[field]
           elsif field.respond_to?(:to_s) && @params.key?(field.to_s)

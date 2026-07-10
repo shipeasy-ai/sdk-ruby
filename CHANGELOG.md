@@ -13,8 +13,6 @@
   override. Adds `Shipeasy::SDK::Env.is_test_env` and
   `Shipeasy.config.render_keys_only?`.
 
-## 3.2.0 (2026-07-08)
-
 ### Experiment exposure now fires on read, with a peek opt-out
 
 `universe(name).assign` is now **side-effect free** — it picks the experiment and

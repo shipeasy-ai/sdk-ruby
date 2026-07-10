@@ -60,9 +60,9 @@ flags.get_killswitch("payments")             # true = killed; optional switch_ke
 
 # Ask the UNIVERSE, not the experiment. Returns an Assignment (never raises):
 #   .name / .group  → nil when not enrolled ·  .enrolled?  → group non-nil
-#   .get(field, fallback = nil) → variant override ?? universe default ?? fallback
-assignment = flags.universe("checkout").assign   # auto-logs one deduped exposure when enrolled
-render_cta(assignment.get("label", "Buy now"))
+#   .get(field, fallback = nil, exposure: true) → variant override ?? universe default ?? fallback
+assignment = flags.universe("checkout").assign   # side-effect free; exposure fires on first get read
+render_cta(assignment.get("label", "Buy now"))    # first read logs one deduped exposure (exposure: false to peek)
 
 flags.track("purchase", { revenue: 49 })     # conversion / metric event
 ```

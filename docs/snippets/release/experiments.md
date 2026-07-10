@@ -12,12 +12,13 @@ flags = Shipeasy::Client.new(current_user)
 #   .name         — the experiment the unit landed in, or nil when not enrolled
 #   .group        — the assigned variant, or nil when not enrolled
 #   .enrolled?    — true iff enrolled (group is non-nil)
-#   .get(field, fallback = nil) — variant override ?? universe default ?? fallback
-# assign takes no user arg — the user is bound at construction. It auto-logs a
-# single deduped exposure when the unit is enrolled.
+#   .get(field, fallback = nil, exposure: true) — variant override ?? universe default ?? fallback
+# assign takes no user arg — the user is bound at construction. It's side-effect
+# free; the single deduped exposure fires on the first get read (pass
+# exposure: false to peek without logging one).
 assignment = flags.universe("{{EXPERIMENT_KEY}}").assign
 
-render_cta(assignment.get("label", "Buy now"))   # always safe — falls back when not enrolled
+render_cta(assignment.get("label", "Buy now"))   # first read logs the exposure; safe when not enrolled
 
 # track the conversion on the same bound Client (unit derived from the bound user)
 #   track(event_name, props = {})

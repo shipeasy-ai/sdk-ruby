@@ -71,7 +71,7 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
 
   # ---- Feature B: auto-exposure on assign() -----------------------------
 
-  describe "universe().assign() auto-exposure" do
+  describe "universe().assign() on-read auto-exposure" do
     let(:running_exp) do
       {
         "experiments" => {
@@ -96,9 +96,17 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
       client
     end
 
-    it "POSTs one exposure event when the unit is enrolled" do
+    it "logs no exposure on assign() alone, one on the first read" do
       client = live_client_with(running_exp)
-      bodies = capture_collect(client) { client.universe("u").assign({ "user_id" => "u_1" }) }
+      # assign() by itself is side-effect free — the exposure fires on read.
+      bodies = capture_collect(client) do
+        a = client.universe("u").assign({ "user_id" => "u_1" })
+        expect(a.enrolled?).to be(true)
+      end
+      expect(bodies).to be_empty
+      bodies = capture_collect(client) do
+        client.universe("u").assign({ "user_id" => "u_1" }).get("anything")
+      end
       expect(bodies.length).to eq(1)
       path, body = bodies.first
       expect(path).to eq("/collect")
@@ -110,20 +118,33 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
       expect(ev["ts"]).to be_a(Integer)
     end
 
-    it "dedups repeated assigns for the same (unit, experiment, group)" do
+    it "does not log on a peek read (exposure: false)" do
       client = live_client_with(running_exp)
       bodies = capture_collect(client) do
-        client.universe("u").assign({ "user_id" => "u_1" })
-        client.universe("u").assign({ "user_id" => "u_1" })
+        a = client.universe("u").assign({ "user_id" => "u_1" })
+        a.get("anything", exposure: false)
       end
-      expect(bodies.length).to eq(1) # only the first assign posts
+      expect(bodies).to be_empty
+    end
+
+    it "dedups repeated reads for the same (unit, experiment, group)" do
+      client = live_client_with(running_exp)
+      bodies = capture_collect(client) do
+        a = client.universe("u").assign({ "user_id" => "u_1" })
+        a.get("x")
+        a.get("y") # same handle → deduped
+        client.universe("u").assign({ "user_id" => "u_1" }).get("z") # same (uid,exp,group)
+      end
+      expect(bodies.length).to eq(1) # only the first read posts
     end
 
     it "is a no-op when the unit is not enrolled (experiment not running)" do
       stopped = running_exp.dup
       stopped["experiments"]["exp"] = running_exp["experiments"]["exp"].merge("status" => "stopped")
       client = live_client_with(stopped)
-      bodies = capture_collect(client) { client.universe("u").assign({ "user_id" => "u_1" }) }
+      bodies = capture_collect(client) do
+        client.universe("u").assign({ "user_id" => "u_1" }).get("anything")
+      end
       expect(bodies).to be_empty
     end
 
@@ -132,7 +153,8 @@ RSpec.describe "Shipeasy::Engine parity features (round 2)" do
       client.send(:load_snapshot, {}, running_exp)
       expect(client).not_to receive(:post)
       a = client.universe("u").assign({ "user_id" => "u_1" })
-      expect(a.enrolled?).to be(true) # enrolled, but no exposure posted
+      expect(a.enrolled?).to be(true)
+      a.get("anything") # enrolled read, but test mode short-circuits post
     end
   end
 

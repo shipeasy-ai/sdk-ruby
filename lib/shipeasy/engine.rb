@@ -350,8 +350,13 @@ module Shipeasy
           candidates.each do |name, exp|
             result = eval_experiment(name, exp, u, flags_blob, exps_blob)
             next unless result.in_experiment
-            post_exposure(u, name, result.group)
-            landed = Eval::Assignment.new(name, result.group, result.params || {})
+            group = result.group
+            # On-read exposure (spec step 7): defer the single exposure to the
+            # first param read via the callback, instead of firing it here at
+            # assign time.
+            landed = Eval::Assignment.new(name, group, result.params || {}, lambda {
+              post_exposure(u, name, group)
+            })
             break
             # not enrolled: try the next candidate — under pooling only one slice
             # can match, so the loop lands on the winner (or falls through).
