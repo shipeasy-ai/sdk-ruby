@@ -1,5 +1,44 @@
 # Changelog
 
+## 3.3.0 (2026-07-10)
+
+### i18n render-keys-only mode (testing)
+
+- **i18n:** new `render_keys_only` config makes the `i18n_t` view helper return
+  the translation **key** verbatim instead of resolving its value (no fetch, no
+  interpolation), so specs/snapshots assert against stable data instead of copy
+  that changes when a translation is edited. **Defaults on when the native env
+  is `"test"`** (`RAILS_ENV` / `RACK_ENV` / `SHIPEASY_ENV` / `APP_ENV`), off
+  otherwise. Set `c.render_keys_only = true/false` in `Shipeasy.configure` to
+  override. Adds `Shipeasy::SDK::Env.is_test_env` and
+  `Shipeasy.config.render_keys_only?`.
+
+## 3.2.0 (2026-07-08)
+
+### Experiment exposure now fires on read, with a peek opt-out
+
+`universe(name).assign` is now **side-effect free** — it picks the experiment and
+resolves the params but logs nothing. The single (deduped) exposure fires on the
+**first `assignment.get(...)` read** of an enrolled assignment: reading *is* the
+exposure. Two behaviours change:
+
+- **`Assignment#get` gains an `exposure:` keyword** —
+  `get(field, fallback = nil, exposure: true)`. Pass `exposure: false` to read a
+  param *without* logging an exposure (peek for a log line / debug view). The
+  default keeps the read-logs-the-exposure behaviour.
+- **Exposure dedup is now durable** — still deduped once per process, and now
+  also durably per `(unit, experiment, group)` server-side, so re-reads and
+  repeat runs never double-count.
+
+### Durable forced-but-gated ID / cohort overrides
+
+The experiment resolver now honours durable **ID overrides** and **cohort/gate
+overrides** that are *forced but still gated*: a matched override pins the group
+only when the unit passes targeting and isn't held out, and ID overrides beat
+cohort overrides. This is consumed via the experiments blob — no new user-facing
+SDK API. Running experiments are byte-identical; the new ordering rides
+`hash_version: 3`.
+
 ## 3.1.1 (2026-07-08)
 
 ### Rails generator pins network egress to the environment

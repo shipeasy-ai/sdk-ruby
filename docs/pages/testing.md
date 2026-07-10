@@ -148,3 +148,12 @@ Shipeasy.configure_for_offline(
 
 Both helpers take the same `attributes:` transform as `configure`, so your
 user-object mapping is exercised in tests exactly as in production.
+
+## i18n keys in tests
+
+Assertions on translated copy are brittle — they break when the copy is edited.
+Under `env==test` (`RAILS_ENV` / `RACK_ENV` / `SHIPEASY_ENV` / `APP_ENV`) the
+gem defaults to **`render_keys_only`**, so `i18n_t("checkout.cta")` returns the
+key `"checkout.cta"` and your specs assert against stable data with no setup.
+Force it on/off with `c.render_keys_only = true/false` in `Shipeasy.configure` —
+see [i18n → Render keys only](i18n.md).

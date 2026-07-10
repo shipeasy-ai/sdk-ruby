@@ -85,6 +85,13 @@ module Shipeasy
                   :cdn_base_url, :loader_url,
                   :manifest_cache_ttl, :label_file_cache_ttl, :http_timeout
 
+    # When true, `i18n_t` renders the translation KEY verbatim instead of
+    # resolving its value, so tests/snapshots assert against stable data instead
+    # of copy that changes when a translation is edited. nil (default) ⇒
+    # env-derived: on when the native env is "test" (RAILS_ENV / RACK_ENV /
+    # SHIPEASY_ENV / APP_ENV), off otherwise. Set true/false to override.
+    attr_accessor :render_keys_only
+
     def initialize
       @base_url             = "https://api.shipeasy.ai"
       @attributes           = nil
@@ -108,6 +115,16 @@ module Shipeasy
       @manifest_cache_ttl   = 60
       @label_file_cache_ttl = 3600
       @http_timeout         = 1
+      # nil ⇒ env-derived (on under RAILS_ENV/…=="test"); true/false overrides.
+      @render_keys_only     = nil
+    end
+
+    # Resolve the effective render_keys_only decision: an explicit true/false set
+    # in the configure block wins; otherwise default to env==test.
+    def render_keys_only?
+      return @render_keys_only unless @render_keys_only.nil?
+
+      Shipeasy::SDK::Env.is_test_env
     end
   end
 

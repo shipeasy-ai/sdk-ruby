@@ -34,6 +34,10 @@ module Shipeasy
 
       def i18n_t(key, variables = {}, profile: nil, chunk: nil)
         config = Shipeasy.config
+        # render_keys_only (default: env==test): return the key verbatim,
+        # skipping value resolution + interpolation so tests assert stable data.
+        return key if config.render_keys_only?
+
         label_file = Shipeasy::I18n::LabelFetcher.new.fetch(
           profile: profile || config.profile,
           chunk:   chunk   || config.default_chunk,

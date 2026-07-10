@@ -38,6 +38,14 @@ module Shipeasy
         (configured_env || "prod").to_s.strip.downcase == "prod"
       end
 
+      # True when the host runtime looks like a test run — the first present
+      # native env var (SHIPEASY_ENV / RAILS_ENV / RACK_ENV / APP_ENV) is exactly
+      # "test" (what Rails/RSpec set). Used to default i18n render_keys_only on
+      # under test. No native var present ⇒ not test.
+      def is_test_env
+        read_native_env == "test"
+      end
+
       # Read the first present native env var (lowercased, trimmed), or nil when
       # none of them is set to a non-empty value.
       def read_native_env
