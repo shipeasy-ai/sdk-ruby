@@ -76,5 +76,34 @@ module Shipeasy
     def self.control_flow_exception(err)
       See::ControlFlowChain.new(err)
     end
+
+    # ---- ambient per-request see() extras -------------------------------
+    #
+    # Attach context that merges into every see() report firing later in this
+    # request, from anywhere — no need to thread it into the rescue block:
+    #
+    #   Shipeasy::SDK.add_extras(order_id: order.id, tenant: tenant.slug)
+    #   # ...later, somewhere else in the same request...
+    #   rescue => e
+    #     Shipeasy::SDK.see(e).causes_the("checkout").to("use cached prices")
+    #     # ^ report carries order_id + tenant automatically
+    #
+    # Fiber-local, so concurrent requests never bleed. The Rack middleware
+    # clears the buffer per request (Rails auto-mounts it); outside Rack, call
+    # `clear_extras` when a unit of work ends. Accepts a hash and/or keywords.
+    # Works with no client configured (it only writes the buffer); never raises.
+    def self.add_extras(extras = nil, **kwargs)
+      merged = {}
+      merged.merge!(extras) if extras.is_a?(Hash)
+      merged.merge!(kwargs) unless kwargs.empty?
+      See::Context.add(merged)
+      nil
+    end
+
+    # Drop the ambient extras buffer for the current request/context.
+    def self.clear_extras
+      See::Context.clear
+      nil
+    end
   end
 end

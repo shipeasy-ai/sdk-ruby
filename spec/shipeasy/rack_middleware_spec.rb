@@ -65,6 +65,16 @@ RSpec.describe Shipeasy::SDK::RackMiddleware do
     expect(Shipeasy::SDK::AnonId.current).to be_nil
   end
 
+  it "clears ambient see() extras after the request (no bleed to the next)" do
+    app = lambda do |_env|
+      Shipeasy::SDK.add_extras(order_id: "req-scoped")
+      [200, {}, ["ok"]]
+    end
+    mw = described_class.new(app)
+    mw.call({})
+    expect(Shipeasy::SDK::See::Context.current).to eq({})
+  end
+
   it "preserves a Set-Cookie the app already emitted" do
     app = lambda { |_env| [200, { "Set-Cookie" => "session=abc; Path=/" }, ["ok"]] }
     mw = described_class.new(app)

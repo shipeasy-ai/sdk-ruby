@@ -24,14 +24,45 @@ end
 ```
 
 `causes_the` and `extras` are chainable setters callable in any order **before**
-`.to`:
+`.to`. You can also fold the extras into the terminal as `.to(outcome, extras)`,
+so there is no ordering to remember:
 
 ```ruby
 Shipeasy.see(e)
   .causes_the("checkout")
   .extras({ order_id: oid })
   .to("use cached prices")
+
+# equivalent, extras inline on the terminal:
+Shipeasy.see(e).causes_the("checkout").to("use cached prices", { order_id: oid })
 ```
+
+A stray `.extras` chained **after** `.to` is ignored with a warning (the report
+already shipped) — it never raises into your rescue block.
+
+### Attach context from anywhere: `Shipeasy.add_extras`
+
+To attach context without threading it into the rescue block, buffer it earlier
+in the request with `Shipeasy.add_extras`. Every `see()` report that fires later
+in the **same request** merges it in:
+
+```ruby
+# from any layer, early in the request
+Shipeasy.add_extras(order_id: order.id, tenant: tenant.slug)
+
+# ...later, deep in a service...
+rescue => e
+  Shipeasy.see(e).causes_the("checkout").to("use cached prices")
+  # report carries order_id + tenant automatically
+end
+```
+
+The buffer is **fiber-local**, so concurrent requests never bleed into each
+other, and it merges into *every* report in the request (not just the first). A
+chained `.extras` / `.to` extra of the same key overrides an ambient one. The
+Rack middleware clears the buffer at the end of each request (Rails auto-mounts
+it); in a background job or script call `Shipeasy.clear_extras` when a unit of
+work ends.
 
 ## Violations (non-exception problems)
 

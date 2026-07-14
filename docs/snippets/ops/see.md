@@ -22,8 +22,34 @@ end
 begin
   charge(order)
 rescue => e
-  # .extras(hash)          structured fields attached to the report
+  # .extras(hash)          structured fields attached to the report; call it
+  #                        BEFORE .to, or pass extras inline as .to(outcome, hash).
+  #                        (A stray .extras AFTER .to is ignored with a warning —
+  #                        it never raises into the rescue block.)
   Shipeasy.see(e).causes_the("checkout").extras({ order_id: oid }).to("use cached prices")
+
+  # equivalent — extras folded into the terminal, no ordering to remember:
+  Shipeasy.see(e).causes_the("checkout").to("use cached prices", { order_id: oid })
+end
+```
+
+### Attach context from anywhere with `Shipeasy.add_extras(...)`
+
+```ruby
+# Buffer extras earlier in the request — from any layer, not just the rescue.
+# Every see() report that fires LATER in the same request carries them, so you
+# don't have to thread context down into the catch site. Fiber-local, so
+# concurrent requests never mix; the Rack middleware clears it per request
+# (Rails auto-mounts it — outside Rack, call Shipeasy.clear_extras yourself).
+Shipeasy.add_extras(order_id: order.id, tenant: tenant.slug)
+
+# ...deep in a service, later in the same request...
+begin
+  charge(order)
+rescue => e
+  # report carries order_id + tenant automatically; a chained .extras / .to
+  # extras of the same key wins over the ambient one.
+  Shipeasy.see(e).causes_the("checkout").to("use cached prices")
 end
 ```
 

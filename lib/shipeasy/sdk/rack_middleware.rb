@@ -1,4 +1,5 @@
 require_relative "anon_id"
+require_relative "see"
 
 module Shipeasy
   module SDK
@@ -32,8 +33,10 @@ module Shipeasy
         begin
           status, headers, body = @app.call(env)
         ensure
-          # Don't leak the id onto the next request handled by this thread.
+          # Don't leak the id — or any ambient see() extras — onto the next
+          # request handled by this thread.
           AnonId.current = nil
+          See::Context.clear
         end
         set_cookie!(headers, id, env) if minted
         [status, headers, body]

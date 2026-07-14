@@ -326,6 +326,17 @@ module Shipeasy
       Shipeasy::SDK.control_flow_exception(err)
     end
 
+    # Ambient per-request see() extras — attach context from anywhere that
+    # merges into every see() report firing later in the same request, so you
+    # never thread it into the rescue block. See Shipeasy::SDK.add_extras.
+    def add_extras(extras = nil, **kwargs)
+      Shipeasy::SDK.add_extras(extras, **kwargs)
+    end
+
+    def clear_extras
+      Shipeasy::SDK.clear_extras
+    end
+
     # Replace the registered global engine + attributes transform (used by the
     # configure_for_* siblings — unlike configure, they replace so a test suite
     # can reconfigure between cases). Returns the engine.

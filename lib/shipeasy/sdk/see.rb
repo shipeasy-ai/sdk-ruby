@@ -12,11 +12,22 @@
 #
 # Dispatch model (differs from TS, which uses a microtask): `.to(outcome)` is
 # the terminal — it builds the wire event and fire-and-forgets the POST to
-# /collect. `causes_the` and `extras` are chainable setters that may be called
-# in any order *before* `.to`:
+# /collect. `causes_the` and `extras` are chainable setters called *before*
+# `.to`; `.to` also accepts the extras inline as a second arg, so there is no
+# ordering trap to remember:
 #
 #   client.see(e).causes_the("checkout").to("use cached prices")
 #   client.see(e).causes_the("checkout").extras({ order_id: oid }).to("use cached prices")
+#   client.see(e).causes_the("checkout").to("use cached prices", { order_id: oid })
+#
+# `.extras` chained AFTER `.to` is ignored with a warning (the report already
+# went out) — it never raises into the rescue block.
+#
+# To attach context from anywhere in a request without threading it into the
+# rescue block, use the ambient buffer (see `Context` below):
+# `Shipeasy.add_extras(order_id: oid)` merges into EVERY see() report that fires
+# later in the same request. It is fiber-local (concurrent requests never bleed)
+# and the Rack middleware clears it at the end of each request.
 #
 # If you don't know the consequence of an exception, don't catch it.
 
@@ -211,27 +222,65 @@ module Shipeasy
         end
         alias causesThe causes_the
 
+        # Attach debugging metadata. Chainable — call repeatedly (keys merge,
+        # later wins) *before* `.to`. Called after `.to` it is a no-op with a
+        # warning: the report already shipped, so there is nothing to amend and,
+        # crucially, it must not raise into the caller's rescue block. Use
+        # `.to(outcome, extras)` or `Shipeasy.add_extras` for late/scattered
+        # context instead.
         def extras(extras)
-          if extras.is_a?(Hash) && !extras.empty?
-            @extras = (@extras || {}).merge(extras)
+          if @done
+            Shipeasy::Logging.warn(
+              "[shipeasy] see() .extras(...) called after .to(...) is ignored — " \
+              "pass extras to .to(outcome, extras) or call .extras before .to"
+            )
+            return self
           end
+          merge_extras(extras)
           self
         end
 
         # Terminal: build the event and fire-and-forget the report. Idempotent.
-        def to(outcome)
-          return if @done
+        # `extras` may be passed inline here as the trailing form
+        # `.to(outcome, { order_id: oid })` — merged like a final `.extras` call.
+        # Returns self so a stray trailing `.extras` chains harmlessly.
+        def to(outcome, extras = nil)
+          return self if @done
 
+          merge_extras(extras) unless extras.nil?
           @done = true
           @outcome = outcome.to_s
           begin
             @dispatch.call(
-              Built.new(@problem, @subject || DEFAULT_SUBJECT, @outcome.empty? ? DEFAULT_OUTCOME : @outcome, @extras)
+              Built.new(@problem, @subject || DEFAULT_SUBJECT, @outcome.empty? ? DEFAULT_OUTCOME : @outcome, resolved_extras)
             )
           rescue StandardError
             # Reporting must never raise into caller code.
             nil
           end
+          self
+        end
+
+        private
+
+        def merge_extras(extras)
+          return unless extras.is_a?(Hash) && !extras.empty?
+
+          @extras = (@extras || {}).merge(extras)
+        end
+
+        # The chain's own extras merged OVER the ambient per-request buffer, so a
+        # chained key of the same name wins over an ambient one. Keys normalized
+        # to strings only when a merge actually happens; sanitize_extras
+        # stringifies the rest at build time.
+        def resolved_extras
+          ambient = Context.current
+          return @extras if ambient.empty?
+          return ambient if @extras.nil? || @extras.empty?
+
+          out = ambient.dup
+          @extras.each { |k, v| out[k.to_s] = v }
+          out
         end
       end
 
@@ -265,6 +314,8 @@ module Shipeasy
       end
 
       # A no-op chain returned by the module-level see() when no client exists.
+      # Every method returns self so the full grammar — including a trailing
+      # `.extras` after `.to` — chains without ever raising.
       class NullChain
         def causes_the(_subject)
           self
@@ -275,8 +326,53 @@ module Shipeasy
           self
         end
 
-        def to(_outcome)
+        def to(_outcome, _extras = nil)
+          self
+        end
+      end
+
+      # ---- Ambient per-request extras -------------------------------------
+
+      # A per-request buffer of extras that merge into EVERY see() report firing
+      # later in the same execution context. Lets a request attach context
+      # (order id, route, tenant) from anywhere without threading it into the
+      # rescue block: `Shipeasy.add_extras(order_id: oid)` here, and any
+      # subsequent `see()` in this request carries it.
+      #
+      # Fiber-local (like AnonId), so concurrent requests never bleed into each
+      # other. The Rack middleware clears it in an `ensure` at the end of each
+      # request; outside a Rack request (jobs, scripts) call
+      # `Shipeasy.clear_extras` yourself when a logical unit of work ends.
+      #
+      # Values are stored raw and sanitized (scalar-only, truncated, 20-key cap,
+      # private-attribute stripped) at build time, exactly like chained extras.
+      module Context
+        THREAD_KEY = :shipeasy_see_ambient_extras
+
+        module_function
+
+        # Merge fields into the current context's buffer (string keys, later
+        # wins). Non-hash / empty input is ignored. Never raises.
+        def add(extras)
+          return unless extras.is_a?(Hash) && !extras.empty?
+
+          buf = (Thread.current[THREAD_KEY] ||= {})
+          extras.each { |k, v| buf[k.to_s] = v }
           nil
+        rescue StandardError
+          nil
+        end
+
+        # A copy of the current context's buffer, or {} when empty.
+        def current
+          buf = Thread.current[THREAD_KEY]
+          buf.nil? || buf.empty? ? {} : buf.dup
+        end
+
+        # Drop the current context's buffer so extras never leak to the next
+        # request handled by this thread/fiber.
+        def clear
+          Thread.current[THREAD_KEY] = nil
         end
       end
     end

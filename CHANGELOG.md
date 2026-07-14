@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.4.0 (2026-07-13)
+
+### see(): inline extras on `.to`, ambient per-request extras, no ordering footgun
+
+- **`.to(outcome, extras)`** — the terminal now takes the extras inline, e.g.
+  `see(e).causes_the("checkout").to("use cached prices", { order_id: oid })`.
+  Equivalent to a final `.extras(...)`; folds under any earlier `.extras` (later
+  wins). So there is no longer an order to remember.
+- **A `.extras` chained AFTER `.to` no longer raises.** Previously it ran on
+  `.to`'s return value and raised `NoMethodError` — inside your rescue block, the
+  worst place. `.to` now returns the chain; a post-`.to` `.extras` is ignored
+  with a warning (the report already shipped). Use `.to(outcome, extras)` or
+  `Shipeasy.add_extras` for late context.
+- **`Shipeasy.add_extras(...)` / `Shipeasy.clear_extras`** — an ambient
+  per-request extras buffer. Call `Shipeasy.add_extras(order_id: id, tenant: t)`
+  from anywhere (any layer, not just the rescue) and every `see()` report that
+  fires later in the same request merges it in. The buffer is **fiber-local**
+  (concurrent requests never bleed), attaches to *every* report in scope, and is
+  cleared per request by the Rack middleware (Rails auto-mounts it; outside Rack,
+  call `Shipeasy.clear_extras` at the end of a unit of work). A chained
+  `.extras` / `.to` extra overrides an ambient key of the same name; ambient
+  extras are sanitized and private-attribute-stripped like any other.
+
 ## 3.3.0 (2026-07-10)
 
 ### i18n render-keys-only mode (testing)
