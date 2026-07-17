@@ -155,6 +155,7 @@ the loader tag (public client key).
 - Anon bucketing: `Shipeasy::SDK::RackMiddleware` mints the shared `__se_anon_id`
   cookie (Rails Railtie auto-mounts it); anonymous `get_flag` then just works.
 - `c.private_attributes = ["email"]` strips keys from outbound events.
+- `c.clean_backtrace` (default on) filters `see()` stacks to app frames via `Rails.backtrace_cleaner`; set `false` for raw backtraces.
 - `c.sticky_store = Shipeasy::SDK::InMemoryStickyStore.new` pins experiment assignment.
 - SSR: `Shipeasy.bootstrap_script_tag(user)` + `Shipeasy.i18n_script_tag(client_key, "en:prod")`.
 - `Shipeasy.on_change { ... }` (requires `c.poll = true`) fires after a poll fetches new data.

@@ -82,6 +82,28 @@ is local-debug only:
 Shipeasy.control_flow_exception(e).because("user cancelled").extras({ id: id })
 ```
 
+## Cleaned backtraces (Rails)
+
+On Rails, `see()` stacks are filtered to **your application** frames by default —
+gem and framework noise is stripped so a report reads like the part of the stack
+you can act on. This leverages Rails' own `Rails.backtrace_cleaner`
+(`ActiveSupport::BacktraceCleaner`, the same cleaner Rails uses for its own error
+pages); the SDK does not invent its own frame-filtering rules. Outside Rails it is
+a no-op and the raw backtrace is sent.
+
+If a stack lives entirely in framework/gem code (the cleaner would strip every
+frame), the SDK falls back to the raw backtrace so an error is never left with an
+empty stack.
+
+Turn it off to always report the full, unfiltered backtrace:
+
+```ruby
+Shipeasy.configure do |c|
+  c.api_key         = ENV.fetch("SHIPEASY_SERVER_KEY")
+  c.clean_backtrace = false
+end
+```
+
 ## Guarantees
 
 - Fire-and-forget; never raises into caller code.

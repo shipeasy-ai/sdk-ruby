@@ -197,6 +197,94 @@ RSpec.describe "Shipeasy::SDK see()" do
     end
   end
 
+  describe "backtrace cleaning" do
+    # An exception carrying a hand-built backtrace mixing app + gem frames, so we
+    # can assert exactly which frames survive cleaning.
+    def exc_with_backtrace(frames)
+      e = RuntimeError.new("boom")
+      e.set_backtrace(frames)
+      e
+    end
+
+    APP_AND_GEM = [
+      "app/models/order.rb:10:in `charge'",
+      "/gems/activerecord-7.1/lib/foo.rb:99:in `run'",
+      "app/controllers/checkout_controller.rb:5:in `create'",
+    ].freeze
+
+    describe "Shipeasy::SDK::See.build_event with a cleaner" do
+      it "passes the raw backtrace through the framework cleaner" do
+        # A stand-in for Rails.backtrace_cleaner.clean: drop /gems/ frames. We do
+        # NOT reimplement this rule in the SDK — the callable comes from the host.
+        cleaner = ->(bt) { bt.reject { |f| f.include?("/gems/") } }
+        ev = Shipeasy::SDK::See.build_event(
+          exc_with_backtrace(APP_AND_GEM), "checkout", "use cached prices", nil,
+          sdk_version: "test", env: "prod", backtrace_cleaner: cleaner
+        )
+        expect(ev["stack"]).to include("order.rb")
+        expect(ev["stack"]).to include("checkout_controller.rb")
+        expect(ev["stack"]).not_to include("/gems/")
+      end
+
+      it "sends the raw backtrace when no cleaner is supplied" do
+        ev = Shipeasy::SDK::See.build_event(
+          exc_with_backtrace(APP_AND_GEM), "checkout", "x", nil,
+          sdk_version: "test", env: "prod"
+        )
+        expect(ev["stack"]).to include("/gems/")
+      end
+
+      it "falls back to the raw backtrace when the cleaner strips every frame" do
+        cleaner = ->(_bt) { [] }
+        ev = Shipeasy::SDK::See.build_event(
+          exc_with_backtrace(APP_AND_GEM), "checkout", "x", nil,
+          sdk_version: "test", env: "prod", backtrace_cleaner: cleaner
+        )
+        # A stack that lives entirely in framework code must not lose ALL signal.
+        expect(ev["stack"]).to include("order.rb")
+        expect(ev["stack"]).to include("/gems/")
+      end
+
+      it "falls back to the raw backtrace when the cleaner raises" do
+        cleaner = ->(_bt) { raise "cleaner blew up" }
+        ev = Shipeasy::SDK::See.build_event(
+          exc_with_backtrace(APP_AND_GEM), "checkout", "x", nil,
+          sdk_version: "test", env: "prod", backtrace_cleaner: cleaner
+        )
+        expect(ev["stack"]).to include("order.rb")
+      end
+    end
+
+    describe "engine dispatch under Rails" do
+      # A minimal stand-in for the Rails app object exposing backtrace_cleaner.
+      def fake_rails(cleaner)
+        cleaner_obj = Object.new
+        cleaner_obj.define_singleton_method(:clean) { |bt| cleaner.call(bt) }
+        rails = Object.new
+        rails.define_singleton_method(:backtrace_cleaner) { cleaner_obj }
+        rails
+      end
+
+      it "cleans see() stacks via Rails.backtrace_cleaner by default" do
+        stub_const("Rails", fake_rails(->(bt) { bt.reject { |f| f.include?("/gems/") } }))
+        client = live_client
+        bodies = capture_collect(client) do
+          client.see(exc_with_backtrace(APP_AND_GEM)).causes_the("checkout").to("use cached prices")
+        end
+        expect(events(bodies).first["stack"]).not_to include("/gems/")
+      end
+
+      it "sends the raw backtrace when clean_backtrace: false, even under Rails" do
+        stub_const("Rails", fake_rails(->(bt) { bt.reject { |f| f.include?("/gems/") } }))
+        client = live_client(clean_backtrace: false)
+        bodies = capture_collect(client) do
+          client.see(exc_with_backtrace(APP_AND_GEM)).causes_the("checkout").to("x")
+        end
+        expect(events(bodies).first["stack"]).to include("/gems/")
+      end
+    end
+  end
+
   describe "inline extras on .to" do
     it "accepts extras as the trailing arg to .to(outcome, extras)" do
       client = live_client

@@ -46,9 +46,14 @@ module Shipeasy
     #     swallows one of its OWN internal errors it normally ships a structured
     #     see event to Shipeasy's own project (NOT yours) so the SDK team can
     #     track SDK bugs; set true to disable that entirely.
+    #   - clean_backtrace (default true): pass see() error backtraces through the
+    #     host framework's own backtrace cleaner so reports carry only your
+    #     application frames (gem/framework noise stripped). We do not invent the
+    #     filtering rules — this leverages `Rails.backtrace_cleaner` and is a
+    #     no-op outside Rails. Set false to always report the raw backtrace.
     attr_accessor :env, :is_network_enabled, :disable_telemetry, :telemetry_url,
                   :private_attributes, :sticky_store,
-                  :disable_internal_error_reporting
+                  :disable_internal_error_reporting, :clean_backtrace
 
     # SDK-wide diagnostic verbosity for the leveled logger (Shipeasy::Logging).
     # One of :silent, :error, :warn (default), :info, :debug (strings accepted
@@ -103,6 +108,7 @@ module Shipeasy
       @is_network_enabled   = nil
       @disable_telemetry    = nil
       @disable_internal_error_reporting = false
+      @clean_backtrace      = true
       @telemetry_url        = nil
       @private_attributes   = nil
       @sticky_store         = nil
@@ -197,6 +203,7 @@ module Shipeasy
         sticky_store:       cfg.sticky_store,
         log_level:          cfg.log_level,
         disable_internal_error_reporting: cfg.disable_internal_error_reporting,
+        clean_backtrace:    cfg.clean_backtrace,
       )
       @engine = engine
       # Capture +engine+ in the closure (not the @engine ivar, which a concurrent

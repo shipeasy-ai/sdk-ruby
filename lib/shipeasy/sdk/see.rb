@@ -121,7 +121,15 @@ module Shipeasy
       # ---- Wire event construction ----
 
       # Build the type:"error" event accepted by POST /collect.
-      def build_event(problem, subject, outcome, extras, sdk_version:, env:)
+      #
+      # `backtrace_cleaner` (optional) is a callable that takes the raw backtrace
+      # array and returns an application-only subset (framework/gem frames
+      # stripped) — e.g. `->(bt) { Rails.backtrace_cleaner.clean(bt) }`. It is
+      # applied before the stack is joined; if it strips every frame (a stack
+      # that is purely framework/gem code) we fall back to the raw backtrace so
+      # an error is never left with an empty stack. We never invent the filtering
+      # rules — the callable is supplied by the framework's own cleaner.
+      def build_event(problem, subject, outcome, extras, sdk_version:, env:, backtrace_cleaner: nil)
         stack = nil
 
         if problem.is_a?(Violation)
@@ -131,7 +139,7 @@ module Shipeasy
         elsif problem.is_a?(Exception)
           error_type = problem.class.name || "Error"
           message    = (problem.message.to_s.empty? ? error_type : problem.message)
-          bt = problem.backtrace
+          bt = clean_backtrace(problem.backtrace, backtrace_cleaner)
           stack = bt.join("\n") if bt && !bt.empty?
           kind = "caught"
         else
@@ -156,6 +164,21 @@ module Shipeasy
         ev["extras"] = clean if clean
         ev["env"] = env if env && !env.to_s.empty?
         ev
+      end
+
+      # Apply the framework-provided backtrace cleaner to a raw backtrace,
+      # returning an application-only frame array. No cleaner (or no backtrace)
+      # ⇒ the input is returned untouched. If the cleaner raises, or strips every
+      # frame, fall back to the raw backtrace — a cleaned-to-empty stack would
+      # lose all debugging signal for an error that lives entirely in framework
+      # code. Never raises.
+      def clean_backtrace(bt, cleaner)
+        return bt if cleaner.nil? || bt.nil? || bt.empty?
+
+        cleaned = cleaner.call(bt)
+        cleaned && !cleaned.empty? ? cleaned : bt
+      rescue StandardError
+        bt
       end
 
       # ---- Spam limiter (mirror SeeLimiter) ----

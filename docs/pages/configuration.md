@@ -62,6 +62,7 @@ Set any of these in the `configure` block:
 | `is_network_enabled` | environment-derived | Master switch for **all** outbound requests (blob fetch, `track`, exposures, `see()`, telemetry). On in production, off elsewhere. See [Network & telemetry defaults](#network--telemetry-defaults). |
 | `disable_telemetry` | environment-derived | Opt out of per-evaluation usage telemetry. Defaults off in production / on outside it. Forced off when the network is disabled. Evaluation itself is unaffected. |
 | `disable_internal_error_reporting` | `false` | Opt out of SDK self-monitoring (see below). Evaluation itself is unaffected. |
+| `clean_backtrace` | `true` | Filter `see()` error stacks to your **application** frames using Rails' own backtrace cleaner (gem/framework noise stripped). No-op outside Rails. Set `false` to report the raw backtrace. See [error reporting](error-reporting.md). |
 | `telemetry_url` | built-in | Override the telemetry endpoint (rarely needed). |
 | `private_attributes` | `nil` | Attribute keys stripped from every outbound event before it leaves the process. They still drive **targeting** locally. See [advanced](advanced.md). |
 | `sticky_store` | `nil` | Pin a user's experiment group across re-buckets. See [advanced](advanced.md). |

@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.5.0 (2026-07-16)
+
+### see(): cleaned, application-only backtraces on Rails
+
+- **`c.clean_backtrace` (default `true`)** — `see()` error stacks are now
+  filtered to your **application** frames, with gem/framework noise stripped, so
+  a report reads like the part of the stack you can act on. This leverages
+  Rails' own `Rails.backtrace_cleaner` (`ActiveSupport::BacktraceCleaner`) — the
+  SDK does not invent its own frame-filtering rules, it reuses the cleaner Rails
+  already uses for its error pages.
+- **No-op outside Rails.** With no Rails backtrace cleaner present, the raw
+  backtrace is sent unchanged.
+- **Never loses the whole stack.** If the cleaner would strip *every* frame (an
+  error that lives entirely in framework/gem code), or it raises, the SDK falls
+  back to the raw backtrace.
+- Set `c.clean_backtrace = false` to always report the full, unfiltered
+  backtrace.
+
 ## 3.4.0 (2026-07-13)
 
 ### see(): inline extras on `.to`, ambient per-request extras, no ordering footgun

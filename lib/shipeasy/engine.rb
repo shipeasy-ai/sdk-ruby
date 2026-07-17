@@ -36,7 +36,7 @@ module Shipeasy
       # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
       DEFAULT_CDN_BASE = "https://cdn.shipeasy.ai"
 
-      def initialize(api_key:, base_url: nil, env: "prod", is_network_enabled: nil, disable_telemetry: nil, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil, disable_internal_error_reporting: false)
+      def initialize(api_key:, base_url: nil, env: "prod", is_network_enabled: nil, disable_telemetry: nil, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil, disable_internal_error_reporting: false, clean_backtrace: true)
         # SDK-wide diagnostic verbosity. Set the leveled logger from the passed
         # level (default :warn; unknown falls back to :warn). The logger is
         # module-scoped, so the last-built engine wins — mirrors the TS SDK,
@@ -52,6 +52,13 @@ module Shipeasy
         # locally so private attrs never leave for evaluation; the only egress is
         # track(), where the listed keys are dropped from the props bag.
         @private_attributes = (private_attributes || []).map(&:to_s)
+        # When true (default), see() error stacks are passed through the host
+        # framework's own backtrace cleaner so a report carries only application
+        # frames (gem/framework noise stripped). We never invent the filtering —
+        # today this leverages Rails.backtrace_cleaner and is a no-op outside
+        # Rails. Set false to always send the raw backtrace. See
+        # see_backtrace_cleaner.
+        @clean_backtrace = clean_backtrace != false
         # Pluggable sticky-bucketing store (doc 20 §2). Absent ⇒ deterministic.
         # Threaded into experiment eval so an enrolled unit locks to its first
         # assigned variant. Built-in: InMemoryStickyStore.
@@ -645,6 +652,7 @@ module Shipeasy
           strip_private(built.extras),
           sdk_version: Shipeasy::SDK::VERSION,
           env: @env,
+          backtrace_cleaner: see_backtrace_cleaner,
         )
         return unless @see_limiter.should_send?(ev)
 
@@ -656,6 +664,26 @@ module Shipeasy
         end
       rescue => e
         Shipeasy::Logging.error "[shipeasy] see() failed: #{e.message}"
+      end
+
+      # The framework-provided backtrace cleaner used to strip gem/framework
+      # frames from see() stacks, or nil to send the raw backtrace. Resolved
+      # lazily (not memoized) because Rails installs its cleaner during boot,
+      # which can finish after Shipeasy.configure runs. Today the only supported
+      # cleaner is Rails' own `ActiveSupport::BacktraceCleaner` — we leverage it
+      # rather than reimplementing the app-vs-gem frame rules ourselves. Returns
+      # nil when disabled or when not running under Rails.
+      def see_backtrace_cleaner
+        return nil unless @clean_backtrace
+        return nil unless defined?(::Rails) && ::Rails.respond_to?(:backtrace_cleaner)
+
+        cleaner = ::Rails.backtrace_cleaner
+        return nil unless cleaner.respond_to?(:clean)
+
+        ->(bt) { cleaner.clean(bt) }
+      rescue StandardError
+        # Rails present but the cleaner blew up while resolving: fall back to raw.
+        nil
       end
 
       # Drop caller-marked private attributes from an outbound props bag. Handles
