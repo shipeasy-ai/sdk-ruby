@@ -70,9 +70,101 @@ module Shipeasy
         user["user_id"] || user[:user_id] || user["anonymous_id"] || user[:anonymous_id]
       end
 
+      def self.clamp_pct(n)
+        return 0 if n < 0
+        return 10000 if n > 10000
+        n
+      end
+
+      # Effective rollout % for a stack entry at time +now+ (epoch ms). A
+      # condition with no explicit rolloutPct defaults to 100% (match => pass); a
+      # rollout to 0%. A ramp linearly interpolates from=>to over
+      # [startAt, startAt + durationMs] via truncating-toward-zero division — the
+      # cross-SDK contract (experiment-platform/04-evaluation.md). Mirrors core's
+      # effectivePct.
+      def self.effective_pct(entry, now)
+        type = entry["type"] || entry[:type]
+        raw  = entry["rolloutPct"] || entry[:rolloutPct]
+        base = raw.nil? ? (type == "condition" ? 10000 : 0) : raw
+        ramp = entry["ramp"] || entry[:ramp]
+        return base unless ramp
+
+        from      = ramp["from"] || ramp[:from]
+        to        = ramp["to"] || ramp[:to]
+        start_at  = ramp["startAt"] || ramp[:startAt]
+        duration  = ramp["durationMs"] || ramp[:durationMs]
+        return from if now <= start_at
+        return to if now >= start_at + duration
+
+        delta   = to - from # signed
+        elapsed = now - start_at
+        # .to_i on the float quotient truncates toward zero (works for a negative
+        # ramp-down delta, unlike Ruby's floor-division integer `/`).
+        clamp_pct(from + (delta * elapsed).fdiv(duration).to_i)
+      end
+
+      # Hash the caller into [0, 10000) and test against +pct+. No-unit contract
+      # (experiment-platform/18): a fully-rolled bucket is on for everyone without
+      # a unit id; a fractional one needs a stable unit, so it is off. Mirrors
+      # core's bucketHit.
+      def self.bucket_hit(pct, uid, salt)
+        return false if pct <= 0
+        return pct >= 10000 if uid.nil? || uid.to_s.empty?
+        return true if pct >= 10000
+        murmur3("#{salt}:#{uid}") % 10000 < pct
+      end
+
+      # Evaluate one gatekeeper stack entry. A `condition` gates on its rules
+      # (pass: "all" | "any") then buckets at its own rollout % (default 100%); a
+      # `rollout` buckets everyone who reached it (default 0%). A condition's
+      # default bucketing salt is its own id so each step buckets independently;
+      # a rollout falls back to the gate salt so existing entries don't re-bucket.
+      # Mirrors core's evalStackEntry.
+      def self.eval_stack_entry(entry, user, fallback_salt, now)
+        type = entry["type"] || entry[:type]
+        bucket_by = entry["bucketBy"] || entry[:bucketBy]
+        entry_salt = entry["salt"] || entry[:salt]
+
+        if type == "condition"
+          rules = entry["rules"] || entry[:rules] || []
+          return false if rules.empty?
+
+          mode = entry["pass"] || entry[:pass] || "all"
+          matched =
+            if mode == "any"
+              rules.any? { |r| match_rule(r, user) }
+            else
+              rules.all? { |r| match_rule(r, user) }
+            end
+          return false unless matched
+
+          salt = (entry_salt && !entry_salt.to_s.empty?) ? entry_salt : (entry["id"] || entry[:id] || fallback_salt)
+          bucket_hit(effective_pct(entry, now), pick_identifier(user, bucket_by), salt)
+        else
+          salt = (entry_salt && !entry_salt.to_s.empty?) ? entry_salt : fallback_salt
+          bucket_hit(effective_pct(entry, now), pick_identifier(user, bucket_by), salt)
+        end
+      end
+
       def self.eval_gate(gate, user)
         return false if enabled?(gate["killswitch"])
         return false unless enabled?(gate["enabled"])
+
+        # Modern gatekeepers ship an ordered `stack`; evaluate it top-to-bottom and
+        # pass on the first entry whose rules match AND whose bucket hits. This is
+        # the canonical model — the flat `rules`/`rolloutPct` below are a lossy
+        # approximation (a whitelist condition at 100% collapses to `rolloutPct: 0`
+        # once the public rollout is 0%, which the flat path would wrongly read as
+        # "never"). Mirrors @shipeasy/core evalGatekeeper — keep the two in sync.
+        stack = gate["stack"] || gate[:stack]
+        if stack.is_a?(Array) && !stack.empty?
+          now = (Time.now.to_f * 1000).to_i
+          gate_salt = gate["salt"] || gate[:salt]
+          stack.each do |entry|
+            return true if eval_stack_entry(entry, user, gate_salt, now)
+          end
+          return false
+        end
 
         (gate["rules"] || []).each do |rule|
           return false unless match_rule(rule, user)

@@ -122,7 +122,11 @@ the i18n loader tag from your app config — see [i18n](i18n.md).
 
 ## Evaluation internals
 
-- **Gates** — rules matched in order; rollout bucket =
+- **Gates** — modern gates carry an ordered gatekeeper `stack`: entries are
+  tried top-to-bottom and the gate passes on the first whose rules match **and**
+  whose rollout bucket hits (each entry buckets at its own rollout %, with a
+  linear ramp supported over time). A gate with no `stack` falls back to the
+  legacy flat path: rules matched in order, then rollout bucket =
   `murmur3("#{salt}:#{uid}") % 10000 < rollout_pct`.
 - **Experiments** — `status == "running"`, optional targeting gate, universe
   holdout range, allocation bucket, then group assignment by weight.

@@ -1,6 +1,22 @@
 # Changelog
 
-## 3.5.0 (2026-07-16)
+## 3.5.1 (2026-07-19)
+
+### fix: honor the gatekeeper stack in local gate evaluation
+
+- **Local gate eval now evaluates a gate's ordered gatekeeper `stack`** (the
+  modern KV shape) instead of only the flat `rules` + `rolloutPct` columns.
+  Entries are tried top-to-bottom and the gate passes on the first whose rules
+  match **and** whose rollout bucket hits — each entry buckets at its own
+  rollout %, with linear time ramps supported. This mirrors `@shipeasy/core`'s
+  `evalGatekeeper` and the edge worker.
+- **Fixes a wrong `false` for whitelisted callers.** The flat columns are lossy:
+  a whitelist condition at 100% followed by a 0% public rollout flattens to
+  `rules: [project_id in [...]]`, `rolloutPct: 0`, which the old flat path read
+  as "matches whitelist AND in the 0% bucket" = never true. The stack now
+  short-circuits on the matching 100% condition.
+- **No behaviour change for stack-less gates** — they keep the exact legacy flat
+  evaluation.
 
 ### see(): cleaned, application-only backtraces on Rails
 
