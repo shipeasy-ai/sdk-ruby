@@ -63,6 +63,12 @@ RSpec.describe "SSR bootstrap script tags" do
     expect(empty).not_to include("data-user")
   end
 
+  it "keeps an empty-string trait (only nil is dropped — cross-SDK contract)" do
+    tag = client.bootstrap_script_tag({ "user_id" => "u1", "email" => "" }, anon_id: "anon-1")
+    parsed = JSON.parse(CGI.unescapeHTML(tag[/data-user="([^"]*)"/, 1]))
+    expect(parsed).to eq("user_id" => "u1", "email" => "")
+  end
+
   it "emits the i18n loader tag with the public key" do
     tag = client.i18n_script_tag("client_pub", profile: "fr:prod")
     expect(tag).to include('src="https://cdn.shipeasy.ai/sdk/i18n/loader.js"')

@@ -749,7 +749,8 @@ module Shipeasy
 
       # Serialize the server-identified user's traits for the SSR bootstrap tag's
       # data-user attribute: the request user minus `anonymous_id`, dropping
-      # nil/empty values. Returns a stable-keyed JSON object, or nil when nothing
+      # nil values only (empty strings and other present values are kept, to
+      # match the cross-SDK contract). Returns a stable-keyed JSON object, or nil when nothing
       # identified remains (a purely anonymous request) so data-user is omitted.
       # The browser SDK adopts this identity on first paint, killing the
       # anon->identified flip. See experiment-platform/18-identity-bucketing.md.
@@ -760,7 +761,6 @@ module Shipeasy
         user.each do |k, v|
           next if k.to_s == "anonymous_id"
           next if v.nil?
-          next if v.respond_to?(:empty?) && v.empty?
 
           traits[k.to_s] = v
         end
