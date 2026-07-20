@@ -42,6 +42,27 @@ RSpec.describe "SSR bootstrap script tags" do
     expect(tag).not_to include("data-anon-id")
   end
 
+  it "carries the server-identified user on the tag as data-user (minus anonymous_id)" do
+    tag = client.bootstrap_script_tag(
+      { "user_id" => "u1", "email" => "e@x.com", "anonymous_id" => "anon-1" },
+      anon_id: "anon-1",
+    )
+    expect(tag).to include('data-anon-id="anon-1"')
+
+    raw = tag[/data-user="([^"]*)"/, 1]
+    parsed = JSON.parse(CGI.unescapeHTML(raw))
+    expect(parsed).to eq("user_id" => "u1", "email" => "e@x.com")
+    expect(parsed).not_to have_key("anonymous_id")
+  end
+
+  it "omits data-user for a purely anonymous request" do
+    only_anon = client.bootstrap_script_tag({ "anonymous_id" => "anon-1" }, anon_id: "anon-1")
+    expect(only_anon).not_to include("data-user")
+
+    empty = client.bootstrap_script_tag({})
+    expect(empty).not_to include("data-user")
+  end
+
   it "emits the i18n loader tag with the public key" do
     tag = client.i18n_script_tag("client_pub", profile: "fr:prod")
     expect(tag).to include('src="https://cdn.shipeasy.ai/sdk/i18n/loader.js"')

@@ -485,6 +485,8 @@ module Shipeasy
           attr("data-api-url", base),
         ]
         attrs << attr("data-anon-id", anon_id) if anon_id && !anon_id.empty?
+        data_user = identity_attrs(user)
+        attrs << attr("data-user", data_user) if data_user
         %(<script src="#{CGI.escapeHTML("#{base}/sdk/bootstrap.js")}" #{attrs.join(' ')}></script>)
       end
 
@@ -743,6 +745,28 @@ module Shipeasy
 
       def attr(name, value)
         %(#{name}="#{CGI.escapeHTML(value.to_s)}")
+      end
+
+      # Serialize the server-identified user's traits for the SSR bootstrap tag's
+      # data-user attribute: the request user minus `anonymous_id`, dropping
+      # nil/empty values. Returns a stable-keyed JSON object, or nil when nothing
+      # identified remains (a purely anonymous request) so data-user is omitted.
+      # The browser SDK adopts this identity on first paint, killing the
+      # anon->identified flip. See experiment-platform/18-identity-bucketing.md.
+      def identity_attrs(user)
+        return nil unless user.is_a?(Hash)
+
+        traits = {}
+        user.each do |k, v|
+          next if k.to_s == "anonymous_id"
+          next if v.nil?
+          next if v.respond_to?(:empty?) && v.empty?
+
+          traits[k.to_s] = v
+        end
+        return nil if traits.empty?
+
+        JSON.generate(traits.sort.to_h)
       end
 
       def start_poll

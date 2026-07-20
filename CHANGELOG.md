@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.6.0 (2026-07-19)
+
+### feat: carry the server-identified user on the SSR bootstrap tag as `data-user`
+
+- **`bootstrap_script_tag` now emits `data-user`** — the request user's identity
+  traits (minus `anonymous_id`, dropping nil/empty values) as HTML-escaped JSON,
+  right after `data-anon-id`. The browser SDK reads it via
+  `JSON.parse(el.getAttribute("data-user"))` and adopts the identity on first
+  paint, so a Ruby-backend + JS-frontend app never flips from anonymous to
+  identified after hydration — both sides bucket on the same identity from the
+  first render. See `experiment-platform/18-identity-bucketing.md`.
+- **Anonymous requests are unaffected** — a user with only `anonymous_id` (or an
+  empty user) emits no `data-user`. Traits are serialized with deterministic key
+  ordering for stable output.
+- Mirrors `@shipeasy/sdk` (TS) 7.9.0 and the Python SDK 0.20.0.
+
 ## 3.5.1 (2026-07-19)
 
 ### fix: honor the gatekeeper stack in local gate evaluation

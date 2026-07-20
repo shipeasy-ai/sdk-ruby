@@ -1,5 +1,5 @@
 module Shipeasy
   module SDK
-    VERSION = "3.5.1"
+    VERSION = "3.6.0"
   end
 end

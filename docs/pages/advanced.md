@@ -120,6 +120,16 @@ head = Shipeasy.bootstrap_script_tag(user, anon_id: anon_id) +
 `https://cdn.shipeasy.ai`). In **Rails**, the `i18n_head_tags` view helper renders
 the i18n loader tag from your app config — see [i18n](i18n.md).
 
+### No anon→identified flip
+
+When you pass an **identified** user (any trait beyond `anonymous_id`), the tag
+also carries that identity as `data-user` — the user's traits minus
+`anonymous_id`, as HTML-escaped JSON. The browser SDK adopts it on first paint,
+so a Ruby-backend + JS-frontend app never flips from anonymous to identified
+after hydration; both sides bucket on the same identity from the first render. A
+purely anonymous request (only `anonymous_id`, or an empty user) emits **no**
+`data-user`. See `experiment-platform/18-identity-bucketing.md`.
+
 ## Evaluation internals
 
 - **Gates** — modern gates carry an ordered gatekeeper `stack`: entries are
