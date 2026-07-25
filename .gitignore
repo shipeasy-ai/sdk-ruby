@@ -19,3 +19,6 @@ tmp
 .ruby-gemset
 .rspec_status
 vendor/bundle
+.env
+.env.local
+.DS_Store
