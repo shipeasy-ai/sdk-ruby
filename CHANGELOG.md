@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.6.1 (2026-07-25)
+
+### fix: `i18n_head_tags` no longer swallows the markup after it
+
+- **The i18n loader `<script>` is now closed properly.** The Rails view helper
+  `i18n_script_tag` built its tag with ActionView's `tag(:script, …)`, which
+  renders a self-closing `<script … />`. HTML has no self-closing script: the
+  parser treats everything up to the next `</script>` as that script's body, so
+  whatever the layout emitted after `i18n_head_tags` in the `<head>` — the
+  `bootstrap_script_tag`, most often — was silently swallowed and never ran. It
+  now renders `<script …></script>`.
+- Only the Rails view helper was affected. The framework-agnostic
+  `Shipeasy.i18n_script_tag` / `bootstrap_script_tag` write their own closing
+  tags and were always correct.
+
 ## 3.6.0 (2026-07-19)
 
 ### feat: carry the server-identified user on the SSR bootstrap tag as `data-user`

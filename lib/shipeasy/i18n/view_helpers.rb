@@ -1,18 +1,17 @@
 module Shipeasy
   module I18n
     module ViewHelpers
-      def i18n_head_tags(profile: nil, chunk: nil)
+      def i18n_head_tags(profile: nil)
         safe_join([
-          i18n_inline_data(profile: profile, chunk: chunk),
+          i18n_inline_data(profile: profile),
           i18n_script_tag,
         ], "\n")
       end
 
-      def i18n_inline_data(profile: nil, chunk: nil)
+      def i18n_inline_data(profile: nil)
         config = Shipeasy.config
         label_file = Shipeasy::I18n::LabelFetcher.new.fetch(
           profile: profile || config.profile,
-          chunk:   chunk   || config.default_chunk,
         )
         return "".html_safe unless label_file
 
@@ -29,10 +28,15 @@ module Shipeasy
           async: true,
         }
         attrs[:"data-hide-until-ready"] = "true" if hide_until_ready
-        tag(:script, attrs)
+        # `content_tag`, NOT `tag` — the latter renders a self-closing
+        # `<script … />`, which HTML has no such thing as: the parser treats
+        # everything up to the next `</script>` as this script's body, silently
+        # swallowing whatever the layout puts after us in the <head> (the
+        # bootstrap tag, most often). An explicit close tag is required.
+        content_tag(:script, "", attrs)
       end
 
-      def i18n_t(key, variables = {}, profile: nil, chunk: nil)
+      def i18n_t(key, variables = {}, profile: nil)
         config = Shipeasy.config
         # render_keys_only (default: env==test): return the key verbatim,
         # skipping value resolution + interpolation so tests assert stable data.
@@ -40,7 +44,6 @@ module Shipeasy
 
         label_file = Shipeasy::I18n::LabelFetcher.new.fetch(
           profile: profile || config.profile,
-          chunk:   chunk   || config.default_chunk,
         )
         return key unless label_file && label_file["strings"]
 
