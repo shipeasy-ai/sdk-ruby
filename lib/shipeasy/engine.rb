@@ -32,7 +32,7 @@ module Shipeasy
       See       = Shipeasy::SDK::See
 
       DEFAULT_BASE_URL = "https://api.shipeasy.ai"
-      # CDN origin serving the static loader scripts (/sdk/bootstrap.js,
+      # CDN origin serving the static loader scripts (/sdk/runtime.js,
       # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
       DEFAULT_CDN_BASE = "https://cdn.shipeasy.ai"
 
@@ -470,8 +470,9 @@ module Shipeasy
       end
 
       # Return the cross-platform SSR bootstrap <script> tag for a request:
-      # se-bootstrap.js reads its data-* attributes and hydrates
-      # window.__SE_BOOTSTRAP (and writes the anon cookie). No key is embedded.
+      # /sdk/runtime.js reads its data-* attributes, installs window.shipeasy,
+      # republishes window.__SE_BOOTSTRAP for the npm client SDK and writes the
+      # anon cookie. No key is embedded.
       #
       # Every argument is OPTIONAL and falls back to `Shipeasy.configure`:
       # `user` to an anonymous request, `i18n_profile:` to `config.profile`,
@@ -483,6 +484,7 @@ module Shipeasy
         base = cdn_base(base_url || Shipeasy.config.cdn_base_url)
         attrs = [
           "data-se-bootstrap",
+          "data-se-boot",
           attr("data-flags", JSON.generate(payload["flags"])),
           attr("data-configs", JSON.generate(payload["configs"])),
           attr("data-experiments", JSON.generate(payload["experiments"])),
@@ -493,7 +495,7 @@ module Shipeasy
         attrs << attr("data-anon-id", anon_id) if anon_id && !anon_id.empty?
         data_user = identity_attrs(user)
         attrs << attr("data-user", data_user) if data_user
-        html %(<script src="#{CGI.escapeHTML("#{base}/sdk/bootstrap.js")}" #{attrs.join(' ')}></script>)
+        html %(<script src="#{CGI.escapeHTML("#{base}/sdk/runtime.js")}" #{attrs.join(' ')}></script>)
       end
 
       # Return the i18n loader <script> tag (framework-agnostic; the Rails view

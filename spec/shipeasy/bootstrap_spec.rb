@@ -31,7 +31,7 @@ RSpec.describe "SSR bootstrap script tags" do
 
   it "emits the bootstrap script tag with data-* attributes and no key" do
     tag = client.bootstrap_script_tag({ "user_id" => "u1" }, anon_id: "anon-1")
-    expect(tag).to include('src="https://cdn.shipeasy.ai/sdk/bootstrap.js"')
+    expect(tag).to include('src="https://cdn.shipeasy.ai/sdk/runtime.js"')
     expect(tag).to include("data-se-bootstrap")
     expect(tag).to include('data-anon-id="anon-1"')
     expect(tag).to include('data-i18n-profile="default"')   # config.profile
@@ -99,7 +99,7 @@ RSpec.describe "SSR bootstrap script tags" do
 
     it "bootstrap_script_tag needs no user and takes the profile from the config" do
       tag = client.bootstrap_script_tag
-      expect(tag).to include('src="https://cdn.example.test/sdk/bootstrap.js"')
+      expect(tag).to include('src="https://cdn.example.test/sdk/runtime.js"')
       expect(tag).to include('data-i18n-profile="fr:prod"')
       expect(tag).not_to include("data-user")
     end

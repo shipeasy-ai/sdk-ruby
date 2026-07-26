@@ -102,9 +102,10 @@ unsubscribe.call
 
 Emit the request's evaluated flags as a declarative `<script>` tag so the browser
 SDK has them on first paint. `Shipeasy.bootstrap_script_tag` carries the payload
-in `data-*` attributes (**no key**); the static `se-bootstrap.js` loader hydrates
-`window.__SE_BOOTSTRAP` and writes the `__se_anon_id` cookie so the browser
-buckets identically to the server. Every tag helper is package-level — they
+in `data-*` attributes (**no key**); the `/sdk/runtime.js` browser runtime reads
+them, installs `window.shipeasy`, republishes `window.__SE_BOOTSTRAP` for the npm
+client SDK and writes the `__se_anon_id` cookie so the browser buckets
+identically to the server. Every tag helper is package-level — they
 delegate to the engine configured via `configure`, so you never touch it
 directly.
 
