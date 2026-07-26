@@ -175,6 +175,24 @@ RSpec.describe "Shipeasy package-level configure family" do
       expect(tag).to include("data-se-bootstrap")
       expect(tag).not_to include("sdk_server")
     end
+
+    it "every tag helper is callable with no arguments at all" do
+      Shipeasy.config.public_key = "sdk_client_abc"
+      Shipeasy.config.project_id = "proj_abc"
+      Shipeasy.config.profile    = "en:prod"
+
+      expect(Shipeasy.i18n_script_tag).to include('data-key="sdk_client_abc"')
+      expect(Shipeasy.i18n_script_tag).to include('data-profile="en:prod"')
+      expect(Shipeasy.bootstrap_script_tag).to include("data-se-bootstrap")
+      expect(Shipeasy.devtools_script_tag).to include('data-project-id="proj_abc"')
+      expect(Shipeasy.devtools_script_tag).to include('data-client-api-key="sdk_client_abc"')
+    end
+
+    it "devtools_script_tag raises a helpful error before any configure*" do
+      Shipeasy.reset_config!
+      expect { Shipeasy.devtools_script_tag }
+        .to raise_error(Shipeasy::Error, /devtools_script_tag.*configure/m)
+    end
   end
 
   describe "package-level see()" do

@@ -2,6 +2,12 @@ require "spec_helper"
 require "cgi"
 
 RSpec.describe "SSR bootstrap script tags" do
+  # The tag helpers read their defaults off Shipeasy.config, so start every
+  # example from the shipped defaults rather than whatever configure* an
+  # earlier spec file left behind.
+  before { Shipeasy.reset_config! }
+  after  { Shipeasy.reset_config! }
+
   def client
     Shipeasy::Engine.from_snapshot(
       flags: {
@@ -28,7 +34,7 @@ RSpec.describe "SSR bootstrap script tags" do
     expect(tag).to include('src="https://cdn.shipeasy.ai/sdk/bootstrap.js"')
     expect(tag).to include("data-se-bootstrap")
     expect(tag).to include('data-anon-id="anon-1"')
-    expect(tag).to include('data-i18n-profile="en:prod"')
+    expect(tag).to include('data-i18n-profile="default"')   # config.profile
     expect(tag).not_to include("data-key")
 
     raw = tag[/data-flags="([^"]*)"/, 1]
@@ -74,5 +80,56 @@ RSpec.describe "SSR bootstrap script tags" do
     expect(tag).to include('src="https://cdn.shipeasy.ai/sdk/i18n/loader.js"')
     expect(tag).to include('data-key="client_pub"')
     expect(tag).to include('data-profile="fr:prod"')
+  end
+
+  describe "every argument is optional (defaults come from configure)" do
+    before do
+      Shipeasy.config.public_key   = "sdk_client_cfg"
+      Shipeasy.config.project_id   = "proj_cfg"
+      Shipeasy.config.profile      = "fr:prod"
+      Shipeasy.config.cdn_base_url = "https://cdn.example.test"
+    end
+
+    it "i18n_script_tag takes key, profile and CDN base from the config" do
+      tag = client.i18n_script_tag
+      expect(tag).to include('src="https://cdn.example.test/sdk/i18n/loader.js"')
+      expect(tag).to include('data-key="sdk_client_cfg"')
+      expect(tag).to include('data-profile="fr:prod"')
+    end
+
+    it "bootstrap_script_tag needs no user and takes the profile from the config" do
+      tag = client.bootstrap_script_tag
+      expect(tag).to include('src="https://cdn.example.test/sdk/bootstrap.js"')
+      expect(tag).to include('data-i18n-profile="fr:prod"')
+      expect(tag).not_to include("data-user")
+    end
+
+    it "devtools_script_tag takes the project id and public key from the config" do
+      tag = client.devtools_script_tag
+      expect(tag).to include('src="https://cdn.example.test/se-devtools.js"')
+      expect(tag).to include('data-project-id="proj_cfg"')
+      expect(tag).to include('data-client-api-key="sdk_client_cfg"')
+      expect(tag).to include("defer")
+    end
+
+    it "an explicit argument still wins over the configured value" do
+      expect(client.i18n_script_tag("other_key", profile: "de:prod"))
+        .to include('data-key="other_key"').and include('data-profile="de:prod"')
+      expect(client.bootstrap_script_tag({ "user_id" => "u1" }, i18n_profile: "de:prod"))
+        .to include('data-i18n-profile="de:prod"')
+      expect(client.devtools_script_tag("proj_other", client_key: "other_key", defer: false))
+        .to include('data-project-id="proj_other"').and include('data-client-api-key="other_key"')
+      expect(client.devtools_script_tag(defer: false)).not_to include("defer")
+    end
+  end
+
+  it "warns (but still renders) when the devtools tag has no project id or key" do
+    # Once per missing setting, and only once however many times the tag renders
+    # — a helper that runs on every request must not log a line per request.
+    engine = client
+    expect(Shipeasy::Logging).to receive(:warn).twice
+    3.times do
+      expect(engine.devtools_script_tag).to include('src="https://cdn.shipeasy.ai/se-devtools.js"')
+    end
   end
 end

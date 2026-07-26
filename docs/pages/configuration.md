@@ -67,8 +67,9 @@ Set any of these in the `configure` block:
 | `private_attributes` | `nil` | Attribute keys stripped from every outbound event before it leaves the process. They still drive **targeting** locally. See [advanced](advanced.md). |
 | `sticky_store` | `nil` | Pin a user's experiment group across re-buckets. See [advanced](advanced.md). |
 | `log_level` | `:warn` | SDK diagnostic verbosity — one of `:silent`, `:error`, `:warn`, `:info`, `:debug`. See below. |
-| `public_key` | (none) | Public client key — for the i18n view helpers / loader tag only. |
-| `profile` | `"default"` | i18n locale profile read by the view helpers. |
+| `public_key` | (none) | Public client key — for the i18n view helpers and the SSR loader / devtools tags only. |
+| `profile` | `"default"` | i18n locale profile read by the view helpers and the SSR tags. |
+| `project_id` | (none) | Your project id (`proj_…`) — read by `Shipeasy.devtools_script_tag`. See [advanced](advanced.md). |
 
 ## Fail-safe reads & the `log_level` option
 
@@ -173,3 +174,4 @@ The SDK reads no env vars itself — you wire them through `configure`. Conventi
 
 - `SHIPEASY_SERVER_KEY` → `c.api_key`
 - `SHIPEASY_CLIENT_KEY` → `c.public_key`
+- `SHIPEASY_PROJECT_ID` → `c.project_id`

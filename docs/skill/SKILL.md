@@ -145,8 +145,9 @@ into every see() report later in the same (fiber-local, per-request) scope.
 <h1><%= i18n_t("hero.title", name: current_user.name) %></h1>
 ```
 
-Outside Rails: `Shipeasy.i18n_script_tag(client_key, profile: "en:prod")` emits
-the loader tag (public client key).
+Anywhere (Rails or not): `<%= Shipeasy.i18n_script_tag %>` emits the loader tag
+(public client key). Every argument is optional — key, profile and CDN base come
+from `configure`; pass one only to override it for that tag.
 
 → More: `pages/i18n.md` · snippets `snippets/i18n/{setup,render}.md`.
 
@@ -157,7 +158,10 @@ the loader tag (public client key).
 - `c.private_attributes = ["email"]` strips keys from outbound events.
 - `c.clean_backtrace` (default on) filters `see()` stacks to app frames via `Rails.backtrace_cleaner`; set `false` for raw backtraces.
 - `c.sticky_store = Shipeasy::SDK::InMemoryStickyStore.new` pins experiment assignment.
-- SSR: `Shipeasy.bootstrap_script_tag(user)` + `Shipeasy.i18n_script_tag(client_key, "en:prod")`.
+- SSR tags — all arguments optional (defaults from `configure`), html_safe under Rails:
+  `Shipeasy.bootstrap_script_tag(user)`, `Shipeasy.i18n_script_tag`,
+  `Shipeasy.devtools_script_tag` (overlay; needs `c.project_id` + `c.public_key`;
+  opens with Shift+Alt+S or `?se=1`).
 - `Shipeasy.on_change { ... }` (requires `c.poll = true`) fires after a poll fetches new data.
 
 → More: `pages/advanced.md`.

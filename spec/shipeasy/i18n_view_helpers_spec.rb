@@ -77,4 +77,17 @@ RSpec.describe "Shipeasy::I18n::ViewHelpers tag rendering", if: action_view_avai
       expect(head).not_to include("/>")
     end
   end
+
+  # `<%= Shipeasy.i18n_script_tag %>` must render markup, not escaped text, so
+  # the package-level tags come back html_safe wherever ActiveSupport defines
+  # it. Every value they interpolate is CGI-escaped as it is built.
+  describe "package-level tags in an ERB context" do
+    before { Shipeasy.config.project_id = "proj_abc" }
+
+    it "returns html_safe markup so no .html_safe is needed at the callsite" do
+      expect(Shipeasy.i18n_script_tag).to be_html_safe
+      expect(Shipeasy.bootstrap_script_tag).to be_html_safe
+      expect(Shipeasy.devtools_script_tag).to be_html_safe
+    end
+  end
 end

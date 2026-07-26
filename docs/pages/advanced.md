@@ -104,21 +104,56 @@ Emit the request's evaluated flags as a declarative `<script>` tag so the browse
 SDK has them on first paint. `Shipeasy.bootstrap_script_tag` carries the payload
 in `data-*` attributes (**no key**); the static `se-bootstrap.js` loader hydrates
 `window.__SE_BOOTSTRAP` and writes the `__se_anon_id` cookie so the browser
-buckets identically to the server. Both helpers are package-level — they delegate
-to the engine configured via `configure`, so you never touch it directly.
+buckets identically to the server. Every tag helper is package-level — they
+delegate to the engine configured via `configure`, so you never touch it
+directly.
 
-```ruby
-user = { "user_id" => "u_123" }
-
-# Two tags for the document <head>. The PUBLIC client key (not the server key)
-# goes on the i18n loader tag.
-head = Shipeasy.bootstrap_script_tag(user, anon_id: anon_id) +
-       Shipeasy.i18n_script_tag(client_key, profile: "en:prod")
+```erb
+<%# The document <head>, in full. The PUBLIC client key (never the server key)
+    goes on the i18n loader tag; the bootstrap tag embeds no key at all. %>
+<%= Shipeasy.bootstrap_script_tag(user, anon_id: anon_id) %>
+<%= Shipeasy.i18n_script_tag %>
 ```
 
-`bootstrap_script_tag` also accepts `i18n_profile:` and `base_url:` (defaults to
-`https://cdn.shipeasy.ai`). In **Rails**, the `i18n_head_tags` view helper renders
-the i18n loader tag from your app config — see [i18n](i18n.md).
+### Every argument is optional
+
+All three tag helpers fall back to what `Shipeasy.configure` already set, so the
+bare call is the normal one — pass an argument only to override the configured
+value for that one tag. Under Rails each returns `html_safe` markup, so `<%= … %>`
+renders it without a `.html_safe` at the callsite.
+
+| Helper | Signature | Defaults |
+| --- | --- | --- |
+| `Shipeasy.i18n_script_tag` | `(client_key = nil, profile:, base_url:)` | `config.public_key`, `config.profile`, `config.cdn_base_url` |
+| `Shipeasy.bootstrap_script_tag` | `(user = nil, anon_id:, i18n_profile:, base_url:)` | anonymous request, no anon id, `config.profile`, `config.cdn_base_url` |
+| `Shipeasy.devtools_script_tag` | `(project_id = nil, client_key:, base_url:, defer: true)` | `config.project_id`, `config.public_key`, `config.cdn_base_url` |
+
+A tag still renders when a value is missing (the browser bundle reports what it
+needs), but the SDK logs a warning naming the `configure` setting to fill in.
+
+In **Rails**, the `i18n_head_tags` view helper renders the inline label blob plus
+the loader tag from your app config — see [i18n](i18n.md).
+
+### Devtools overlay tag
+
+`Shipeasy.devtools_script_tag` emits the hosted devtools overlay bundle — nothing
+to install, no overlay code in your bundle. It reads the project id and public
+client key off the tag, and opens with **Shift+Alt+S** or on any page loaded with
+`?se=1`. It is `defer`red by default: a developer tool never belongs on the
+critical rendering path.
+
+```ruby
+Shipeasy.configure do |c|
+  c.api_key    = ENV.fetch("SHIPEASY_SERVER_KEY")
+  c.public_key = ENV.fetch("SHIPEASY_CLIENT_KEY")
+  c.project_id = ENV.fetch("SHIPEASY_PROJECT_ID")   # for the devtools tag
+end
+```
+
+```erb
+<%# Ship it to your own team only — render it for staff / non-production. %>
+<% if current_user&.staff? %><%= Shipeasy.devtools_script_tag %><% end %>
+```
 
 ### No anon→identified flip
 

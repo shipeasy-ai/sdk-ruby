@@ -1,5 +1,39 @@
 # Changelog
 
+## 3.7.0 (2026-07-26)
+
+### feat: the SSR tag helpers take every argument from `configure`, plus a devtools tag
+
+- **`Shipeasy.i18n_script_tag` and `Shipeasy.bootstrap_script_tag` now take no
+  required arguments.** Each falls back to what `Shipeasy.configure` already
+  set — `client_key` → `config.public_key`, `profile` / `i18n_profile` →
+  `config.profile`, `base_url` → `config.cdn_base_url`, and `bootstrap_script_tag`'s
+  `user` → an anonymous request. Every argument is still accepted, and an
+  explicit one wins, so this is for one-off overrides rather than repeating your
+  configuration at each callsite:
+
+  ```erb
+  <%= Shipeasy.i18n_script_tag %>
+  ```
+
+- **New `Shipeasy.devtools_script_tag`** emits the hosted devtools overlay bundle
+  (`se-devtools.js`) with `data-project-id` + `data-client-api-key`, `defer` by
+  default. The overlay opens with **Shift+Alt+S** or on any page loaded with
+  `?se=1`. Its arguments are optional the same way.
+- **New `c.project_id` configure option** (`proj_…`) — what the devtools tag
+  reads. A tag built with a missing project id / public key still renders, and
+  the SDK logs a warning naming the setting to fill in.
+- **The returned tags are `html_safe` under Rails**, so `<%= Shipeasy.i18n_script_tag %>`
+  renders markup with no `.html_safe` at the callsite. Every interpolated value
+  was already HTML-escaped as the tag was built. Outside Rails they are plain
+  Strings, unchanged.
+- **Behaviour change:** the profile a tag carries when you don't pass one is now
+  `config.profile` (default `"default"`) instead of the hard-coded `"en:prod"`.
+  A call that relied on the old implicit `"en:prod"` should either set
+  `c.profile` or pass the profile explicitly. This makes the package-level tags
+  agree with the Rails `i18n_head_tags` view helper, which already read
+  `config.profile`.
+
 ## 3.6.1 (2026-07-25)
 
 ### fix: `i18n_head_tags` no longer swallows the markup after it

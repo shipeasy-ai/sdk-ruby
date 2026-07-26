@@ -472,31 +472,64 @@ module Shipeasy
       # Return the cross-platform SSR bootstrap <script> tag for a request:
       # se-bootstrap.js reads its data-* attributes and hydrates
       # window.__SE_BOOTSTRAP (and writes the anon cookie). No key is embedded.
-      def bootstrap_script_tag(user, anon_id: nil, i18n_profile: "en:prod", base_url: nil)
+      #
+      # Every argument is OPTIONAL and falls back to `Shipeasy.configure`:
+      # `user` to an anonymous request, `i18n_profile:` to `config.profile`,
+      # `base_url:` to `config.cdn_base_url` — so `bootstrap_script_tag` alone
+      # is a valid call for a logged-out page.
+      def bootstrap_script_tag(user = nil, anon_id: nil, i18n_profile: nil, base_url: nil)
+        user ||= {}
         payload = evaluate(user)
-        base = cdn_base(base_url)
+        base = cdn_base(base_url || Shipeasy.config.cdn_base_url)
         attrs = [
           "data-se-bootstrap",
           attr("data-flags", JSON.generate(payload["flags"])),
           attr("data-configs", JSON.generate(payload["configs"])),
           attr("data-experiments", JSON.generate(payload["experiments"])),
           attr("data-killswitches", JSON.generate(payload["killswitches"])),
-          attr("data-i18n-profile", i18n_profile || "en:prod"),
+          attr("data-i18n-profile", resolved_profile(i18n_profile)),
           attr("data-api-url", base),
         ]
         attrs << attr("data-anon-id", anon_id) if anon_id && !anon_id.empty?
         data_user = identity_attrs(user)
         attrs << attr("data-user", data_user) if data_user
-        %(<script src="#{CGI.escapeHTML("#{base}/sdk/bootstrap.js")}" #{attrs.join(' ')}></script>)
+        html %(<script src="#{CGI.escapeHTML("#{base}/sdk/bootstrap.js")}" #{attrs.join(' ')}></script>)
       end
 
       # Return the i18n loader <script> tag (framework-agnostic; the Rails view
       # helper Shipeasy::I18n::ViewHelpers#i18n_script_tag is separate). The
       # loader fetches translations for the profile using the PUBLIC client key.
-      def i18n_script_tag(client_key, profile: "en:prod", base_url: nil)
-        base = cdn_base(base_url)
-        %(<script src="#{CGI.escapeHTML("#{base}/sdk/i18n/loader.js")}" ) +
-          %(#{attr('data-key', client_key)} #{attr('data-profile', profile || 'en:prod')}></script>)
+      #
+      # Every argument is OPTIONAL and falls back to `Shipeasy.configure`:
+      # `client_key` to `config.public_key`, `profile:` to `config.profile`,
+      # `base_url:` to `config.cdn_base_url`.
+      def i18n_script_tag(client_key = nil, profile: nil, base_url: nil)
+        base = cdn_base(base_url || Shipeasy.config.cdn_base_url)
+        key  = client_key || Shipeasy.config.public_key
+        warn_missing("i18n_script_tag", "public_key", key)
+        html %(<script src="#{CGI.escapeHTML("#{base}/sdk/i18n/loader.js")}" ) +
+             %(#{attr('data-key', key)} #{attr('data-profile', resolved_profile(profile))}></script>)
+      end
+
+      # Return the devtools overlay <script> tag. se-devtools.js is a hosted,
+      # self-executing bundle — nothing to install — that reads its project and
+      # public client key off the tag. The overlay opens with Shift+Alt+S or on
+      # any page loaded with `?se=1`.
+      #
+      # Every argument is OPTIONAL and falls back to `Shipeasy.configure`:
+      # `project_id` to `config.project_id`, `client_key:` to
+      # `config.public_key`, `base_url:` to `config.cdn_base_url`. `defer:`
+      # (default true) keeps the overlay off the critical rendering path — the
+      # overlay is a developer tool, never needed for first paint.
+      def devtools_script_tag(project_id = nil, client_key: nil, base_url: nil, defer: true)
+        base = cdn_base(base_url || Shipeasy.config.cdn_base_url)
+        pid  = project_id || Shipeasy.config.project_id
+        key  = client_key || Shipeasy.config.public_key
+        warn_missing("devtools_script_tag", "project_id", pid)
+        warn_missing("devtools_script_tag", "public_key", key)
+        attrs = [attr("data-project-id", pid), attr("data-client-api-key", key)]
+        attrs << "defer" if defer
+        html %(<script src="#{CGI.escapeHTML("#{base}/se-devtools.js")}" #{attrs.join(' ')}></script>)
       end
 
       def track(user_id, event_name, props = {})
@@ -745,6 +778,37 @@ module Shipeasy
 
       def attr(name, value)
         %(#{name}="#{CGI.escapeHTML(value.to_s)}")
+      end
+
+      # Mark a tag we built ourselves (every interpolated value is already
+      # HTML-escaped) as safe, so `<%= Shipeasy.i18n_script_tag %>` renders the
+      # markup instead of escaping it — no `.html_safe` at the callsite. Plain
+      # String outside Rails, where nothing defines html_safe.
+      def html(tag)
+        tag.respond_to?(:html_safe) ? tag.html_safe : tag
+      end
+
+      # The i18n profile a tag should carry: an explicit argument wins, then the
+      # configured profile, then the platform default.
+      def resolved_profile(profile)
+        p = profile || Shipeasy.config.profile
+        p.nil? || p.to_s.empty? ? "en:prod" : p
+      end
+
+      # A tag built with no key/id is not an error — it renders, and the browser
+      # bundle reports what it needs — but it is never what the caller wanted.
+      # Logged once per (helper, setting): a tag helper runs on every render, and
+      # one misconfiguration must not fill the log with a line per request.
+      def warn_missing(fn_name, setting, value)
+        return unless value.nil? || value.to_s.empty?
+
+        @warned_missing ||= {}
+        return if @warned_missing["#{fn_name}.#{setting}"]
+
+        @warned_missing["#{fn_name}.#{setting}"] = true
+        Shipeasy::Logging.warn "[shipeasy] #{fn_name}: no #{setting} — set c.#{setting} " \
+                               "in Shipeasy.configure (or pass it explicitly); the tag " \
+                               "will render without it"
       end
 
       # Serialize the server-identified user's traits for the SSR bootstrap tag's

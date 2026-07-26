@@ -90,6 +90,12 @@ module Shipeasy
                   :cdn_base_url, :loader_url,
                   :label_file_cache_ttl, :http_timeout
 
+    # Your Shipeasy project id (`proj_…`). Read by the SSR tag helpers — the
+    # devtools overlay tag needs it to know which project it is wired to — so
+    # setting it here is what makes `Shipeasy.devtools_script_tag` an
+    # argument-free call.
+    attr_accessor :project_id
+
     # When true, `i18n_t` renders the translation KEY verbatim instead of
     # resolving its value, so tests/snapshots assert against stable data instead
     # of copy that changes when a translation is edited. nil (default) ⇒
@@ -114,6 +120,7 @@ module Shipeasy
       @sticky_store         = nil
       @log_level            = :warn
 
+      @project_id           = nil
       @profile              = "default"
       # The single CDN host the worker actually serves i18n from. The historical
       # `cdn.i18n.shipeasy.ai` manifest host was never wired up.
@@ -306,15 +313,30 @@ module Shipeasy
     end
 
     # SSR tag helpers — delegate to the configured global engine, so you never
-    # touch it. i18n_script_tag carries the PUBLIC client key (not the server
-    # key); bootstrap_script_tag embeds no key.
-    def i18n_script_tag(client_key, profile: "en:prod", base_url: nil)
+    # touch it. i18n_script_tag and devtools_script_tag carry the PUBLIC client
+    # key (never the server key); bootstrap_script_tag embeds no key.
+    #
+    # EVERY argument is optional: each falls back to what `Shipeasy.configure`
+    # already set (public_key / project_id / profile / cdn_base_url), so the
+    # normal call is the bare helper — `<%= Shipeasy.i18n_script_tag %>`. Pass an
+    # argument only to override the configured value for one tag. The returned
+    # tag is html_safe under Rails, so no `.html_safe` at the callsite.
+    def i18n_script_tag(client_key = nil, profile: nil, base_url: nil)
       require_engine("i18n_script_tag").i18n_script_tag(client_key, profile: profile, base_url: base_url)
     end
 
-    def bootstrap_script_tag(user, anon_id: nil, i18n_profile: "en:prod", base_url: nil)
+    def bootstrap_script_tag(user = nil, anon_id: nil, i18n_profile: nil, base_url: nil)
       require_engine("bootstrap_script_tag").bootstrap_script_tag(
         user, anon_id: anon_id, i18n_profile: i18n_profile, base_url: base_url
+      )
+    end
+
+    # The devtools overlay tag (hosted se-devtools.js; opens with Shift+Alt+S or
+    # `?se=1`). Needs the project id + public client key, both taken from
+    # configure unless passed.
+    def devtools_script_tag(project_id = nil, client_key: nil, base_url: nil, defer: true)
+      require_engine("devtools_script_tag").devtools_script_tag(
+        project_id, client_key: client_key, base_url: base_url, defer: defer
       )
     end
 

@@ -22,6 +22,7 @@ Users are taught exactly **two** things, and the docs must never drift from them
 Plus the package-level helpers that let users avoid the heavyweight object:
 `Shipeasy.override_flag/override_config/override_experiment/clear_overrides`,
 `Shipeasy.on_change`, `Shipeasy.i18n_script_tag`, `Shipeasy.bootstrap_script_tag`,
+`Shipeasy.devtools_script_tag`,
 and the `Shipeasy.see` family (`see` / `see_violation` / `control_flow_exception`).
 
 **The `Shipeasy::Engine` class is an internal detail. Do NOT document it.** It
