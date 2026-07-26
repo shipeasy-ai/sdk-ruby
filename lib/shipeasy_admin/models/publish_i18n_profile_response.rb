@@ -22,9 +22,6 @@ module Shipeasy::Admin::Generated
     # Profile that was published.
     attr_accessor :profile_id
 
-    # Audit chunk label, or `null` when none was given.
-    attr_accessor :chunk
-
     # ISO-8601 timestamp of the publish.
     attr_accessor :published_at
 
@@ -73,7 +70,6 @@ module Shipeasy::Admin::Generated
       {
         :'ok' => :'ok',
         :'profile_id' => :'profile_id',
-        :'chunk' => :'chunk',
         :'published_at' => :'published_at',
         :'version' => :'version',
         :'key_count' => :'key_count',
@@ -99,7 +95,6 @@ module Shipeasy::Admin::Generated
       {
         :'ok' => :'Boolean',
         :'profile_id' => :'String',
-        :'chunk' => :'String',
         :'published_at' => :'String',
         :'version' => :'String',
         :'key_count' => :'Float',
@@ -113,7 +108,6 @@ module Shipeasy::Admin::Generated
     # List of attributes with nullable: true
     def self.openapi_nullable
       Set.new([
-        :'chunk',
       ])
     end
 
@@ -143,12 +137,6 @@ module Shipeasy::Admin::Generated
         self.profile_id = attributes[:'profile_id']
       else
         self.profile_id = nil
-      end
-
-      if attributes.key?(:'chunk')
-        self.chunk = attributes[:'chunk']
-      else
-        self.chunk = nil
       end
 
       if attributes.key?(:'published_at')
@@ -338,7 +326,6 @@ module Shipeasy::Admin::Generated
       self.class == o.class &&
           ok == o.ok &&
           profile_id == o.profile_id &&
-          chunk == o.chunk &&
           published_at == o.published_at &&
           version == o.version &&
           key_count == o.key_count &&
@@ -357,7 +344,7 @@ module Shipeasy::Admin::Generated
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [ok, profile_id, chunk, published_at, version, key_count, changed, purged, kv_verified, warning].hash
+      [ok, profile_id, published_at, version, key_count, changed, purged, kv_verified, warning].hash
     end
 
     # Builds the object from hash

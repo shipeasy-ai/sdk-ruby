@@ -34,9 +34,6 @@ module Shipeasy::Admin::Generated
     # Owning profile id.
     attr_accessor :profile_id
 
-    # Owning chunk (authoring grouping) id.
-    attr_accessor :chunk_id
-
     # ISO-8601 timestamp of the last edit.
     attr_accessor :updated_at
 
@@ -52,7 +49,6 @@ module Shipeasy::Admin::Generated
         :'description' => :'description',
         :'variables' => :'variables',
         :'profile_id' => :'profileId',
-        :'chunk_id' => :'chunkId',
         :'updated_at' => :'updatedAt',
         :'updated_by' => :'updatedBy'
       }
@@ -77,7 +73,6 @@ module Shipeasy::Admin::Generated
         :'description' => :'String',
         :'variables' => :'Array<String>',
         :'profile_id' => :'String',
-        :'chunk_id' => :'String',
         :'updated_at' => :'String',
         :'updated_by' => :'String'
       }
@@ -137,10 +132,6 @@ module Shipeasy::Admin::Generated
 
       if attributes.key?(:'profile_id')
         self.profile_id = attributes[:'profile_id']
-      end
-
-      if attributes.key?(:'chunk_id')
-        self.chunk_id = attributes[:'chunk_id']
       end
 
       if attributes.key?(:'updated_at')
@@ -223,7 +214,6 @@ module Shipeasy::Admin::Generated
           description == o.description &&
           variables == o.variables &&
           profile_id == o.profile_id &&
-          chunk_id == o.chunk_id &&
           updated_at == o.updated_at &&
           updated_by == o.updated_by
     end
@@ -237,7 +227,7 @@ module Shipeasy::Admin::Generated
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [id, key, value, description, variables, profile_id, chunk_id, updated_at, updated_by].hash
+      [id, key, value, description, variables, profile_id, updated_at, updated_by].hash
     end
 
     # Builds the object from hash

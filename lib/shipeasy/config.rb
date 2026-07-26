@@ -86,9 +86,9 @@ module Shipeasy
     attr_accessor :attributes
 
     # ---- i18n / string manager ----
-    attr_accessor :public_key, :profile, :default_chunk,
+    attr_accessor :public_key, :profile,
                   :cdn_base_url, :loader_url,
-                  :manifest_cache_ttl, :label_file_cache_ttl, :http_timeout
+                  :label_file_cache_ttl, :http_timeout
 
     # When true, `i18n_t` renders the translation KEY verbatim instead of
     # resolving its value, so tests/snapshots assert against stable data instead
@@ -115,10 +115,10 @@ module Shipeasy
       @log_level            = :warn
 
       @profile              = "default"
-      @default_chunk        = "index"
-      @cdn_base_url         = "https://cdn.i18n.shipeasy.ai"
-      @loader_url           = "https://cdn.i18n.shipeasy.ai/loader.js"
-      @manifest_cache_ttl   = 60
+      # The single CDN host the worker actually serves i18n from. The historical
+      # `cdn.i18n.shipeasy.ai` manifest host was never wired up.
+      @cdn_base_url         = "https://cdn.shipeasy.ai"
+      @loader_url           = "https://cdn.shipeasy.ai/sdk/i18n/loader.js"
       @label_file_cache_ttl = 3600
       @http_timeout         = 1
       # nil ⇒ env-derived (on under RAILS_ENV/…=="test"); true/false overrides.

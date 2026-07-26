@@ -5,8 +5,8 @@ hydrates translations on first paint (Rails view helpers auto-mount).
 > set — see Installation.
 
 ```erb
-<%# i18n_head_tags(profile: nil, chunk: nil) — emits the inline data + loader tag.
-    profile/chunk default to the configured values; pass them to override. %>
+<%# i18n_head_tags(profile: nil) — emits the inline data + loader tag.
+    profile defaults to the configured value; pass it to override. %>
 <%= i18n_head_tags(profile: "{{PROFILE}}") %>
 ```
 

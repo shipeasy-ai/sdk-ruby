@@ -91,7 +91,7 @@ module Shipeasy::Admin::Generated
     end
 
     # List i18n profiles
-    # Returns every locale profile in the project (e.g. `en:prod`, `fr:prod`).  **Use case:** Discover which locale profiles exist before pushing keys or publishing a chunk.
+    # Returns every locale profile in the project (e.g. `en:prod`, `fr:prod`).  **Use case:** Discover which locale profiles exist before pushing keys or publishing.
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
     # @return [Array<ListI18nProfilesResponseInner>]
@@ -101,7 +101,7 @@ module Shipeasy::Admin::Generated
     end
 
     # List i18n profiles
-    # Returns every locale profile in the project (e.g. &#x60;en:prod&#x60;, &#x60;fr:prod&#x60;).  **Use case:** Discover which locale profiles exist before pushing keys or publishing a chunk.
+    # Returns every locale profile in the project (e.g. &#x60;en:prod&#x60;, &#x60;fr:prod&#x60;).  **Use case:** Discover which locale profiles exist before pushing keys or publishing.
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
     # @return [Array<(Array<ListI18nProfilesResponseInner>, Integer, Hash)>] Array<ListI18nProfilesResponseInner> data, response status code and response headers
@@ -151,31 +151,27 @@ module Shipeasy::Admin::Generated
     end
 
     # Publish a profile live
-    # Publish a profile to the CDN — rebuild its KV snapshot + purge the edge. Publishing is PROFILE-WIDE: the whole profile is snapshotted into one KV blob, so the optional `chunk` in the body is an audit label only (it does not scope what ships).  **Use case:** Ship the latest translations live after pushing/updating keys.
+    # Publish a profile to the CDN — rebuild its KV snapshot + purge the edge. Publishing is PROFILE-WIDE: the whole profile is snapshotted into one KV blob, so the body takes no options.  **Use case:** Ship the latest translations live after pushing/updating keys.
     # @param profile_id [String] The profile id to publish.
-    # @param publish_i18n_profile_request [PublishI18nProfileRequest] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @option opts [Object] :body 
     # @return [PublishI18nProfileResponse]
-    def publish_i18n_profile(profile_id, publish_i18n_profile_request, opts = {})
-      data, _status_code, _headers = publish_i18n_profile_with_http_info(profile_id, publish_i18n_profile_request, opts)
+    def publish_i18n_profile(profile_id, opts = {})
+      data, _status_code, _headers = publish_i18n_profile_with_http_info(profile_id, opts)
       data
     end
 
     # Publish a profile live
-    # Publish a profile to the CDN — rebuild its KV snapshot + purge the edge. Publishing is PROFILE-WIDE: the whole profile is snapshotted into one KV blob, so the optional &#x60;chunk&#x60; in the body is an audit label only (it does not scope what ships).  **Use case:** Ship the latest translations live after pushing/updating keys.
+    # Publish a profile to the CDN — rebuild its KV snapshot + purge the edge. Publishing is PROFILE-WIDE: the whole profile is snapshotted into one KV blob, so the body takes no options.  **Use case:** Ship the latest translations live after pushing/updating keys.
     # @param profile_id [String] The profile id to publish.
-    # @param publish_i18n_profile_request [PublishI18nProfileRequest] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @option opts [Object] :body 
     # @return [Array<(PublishI18nProfileResponse, Integer, Hash)>] PublishI18nProfileResponse data, response status code and response headers
-    def publish_i18n_profile_with_http_info(profile_id, publish_i18n_profile_request, opts = {})
+    def publish_i18n_profile_with_http_info(profile_id, opts = {})
       if @api_client.config.debugging
         @api_client.config.logger.debug 'Calling API: ProfilesApi.publish_i18n_profile ...'
-      end
-      # verify the required parameter 'publish_i18n_profile_request' is set
-      if @api_client.config.client_side_validation && publish_i18n_profile_request.nil?
-        fail ArgumentError, "Missing the required parameter 'publish_i18n_profile_request' when calling ProfilesApi.publish_i18n_profile"
       end
       # resource path
       local_var_path = '/api/admin/i18n/profiles/{profileId}/publish'.sub('{profileId}', CGI.escape(profile_id.to_s))
@@ -198,7 +194,7 @@ module Shipeasy::Admin::Generated
       form_params = opts[:form_params] || {}
 
       # http body (model)
-      post_body = opts[:debug_body] || @api_client.object_to_http_body(publish_i18n_profile_request)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(opts[:'body'])
 
       # return_type
       return_type = opts[:debug_return_type] || 'PublishI18nProfileResponse'

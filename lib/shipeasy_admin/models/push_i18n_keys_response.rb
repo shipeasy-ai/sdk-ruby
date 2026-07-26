@@ -28,17 +28,13 @@ module Shipeasy::Admin::Generated
     # Number of keys skipped (== `skipped.length`).
     attr_accessor :skipped_count
 
-    # The chunk the keys were filed under.
-    attr_accessor :chunk
-
     # Attribute mapping from ruby-style variable name to JSON key.
     def self.attribute_map
       {
         :'added' => :'added',
         :'skipped' => :'skipped',
         :'pushed_count' => :'pushed_count',
-        :'skipped_count' => :'skipped_count',
-        :'chunk' => :'chunk'
+        :'skipped_count' => :'skipped_count'
       }
     end
 
@@ -58,8 +54,7 @@ module Shipeasy::Admin::Generated
         :'added' => :'Array<String>',
         :'skipped' => :'Array<String>',
         :'pushed_count' => :'Float',
-        :'skipped_count' => :'Float',
-        :'chunk' => :'String'
+        :'skipped_count' => :'Float'
       }
     end
 
@@ -111,10 +106,6 @@ module Shipeasy::Admin::Generated
         self.skipped_count = attributes[:'skipped_count']
       else
         self.skipped_count = nil
-      end
-
-      if attributes.key?(:'chunk')
-        self.chunk = attributes[:'chunk']
       end
     end
 
@@ -201,8 +192,7 @@ module Shipeasy::Admin::Generated
           added == o.added &&
           skipped == o.skipped &&
           pushed_count == o.pushed_count &&
-          skipped_count == o.skipped_count &&
-          chunk == o.chunk
+          skipped_count == o.skipped_count
     end
 
     # @see the `==` method
@@ -214,7 +204,7 @@ module Shipeasy::Admin::Generated
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [added, skipped, pushed_count, skipped_count, chunk].hash
+      [added, skipped, pushed_count, skipped_count].hash
     end
 
     # Builds the object from hash

@@ -19,9 +19,6 @@ module Shipeasy::Admin::Generated
     # Target profile id to add keys to.
     attr_accessor :profile_id
 
-    # Logical grouping the new keys are filed under. Defaults to `default`.
-    attr_accessor :chunk
-
     # Keys to add. Insert-only — existing keys are reported back as `skipped`.
     attr_accessor :keys
 
@@ -29,7 +26,6 @@ module Shipeasy::Admin::Generated
     def self.attribute_map
       {
         :'profile_id' => :'profile_id',
-        :'chunk' => :'chunk',
         :'keys' => :'keys'
       }
     end
@@ -48,7 +44,6 @@ module Shipeasy::Admin::Generated
     def self.openapi_types
       {
         :'profile_id' => :'String',
-        :'chunk' => :'String',
         :'keys' => :'Array<PushI18nKeysRequestKeysInner>'
       }
     end
@@ -79,10 +74,6 @@ module Shipeasy::Admin::Generated
         self.profile_id = attributes[:'profile_id']
       else
         self.profile_id = nil
-      end
-
-      if attributes.key?(:'chunk')
-        self.chunk = attributes[:'chunk']
       end
 
       if attributes.key?(:'keys')
@@ -145,7 +136,6 @@ module Shipeasy::Admin::Generated
       return true if self.equal?(o)
       self.class == o.class &&
           profile_id == o.profile_id &&
-          chunk == o.chunk &&
           keys == o.keys
     end
 
@@ -158,7 +148,7 @@ module Shipeasy::Admin::Generated
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [profile_id, chunk, keys].hash
+      [profile_id, keys].hash
     end
 
     # Builds the object from hash
