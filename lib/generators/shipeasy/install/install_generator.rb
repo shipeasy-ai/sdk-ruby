@@ -55,7 +55,7 @@ module Shipeasy
         say "  Shipeasy installed → config/initializers/shipeasy.rb", :green
         say ""
         say "  Next steps:"
-        say "    1. Mint your keys: https://app.shipeasy.ai → Settings → SDK keys"
+        say "    1. Mint your keys: https://shipeasy.ai → Connect → SDK Keys"
         say "    2. Provide them (pick one):"
         say "         • ENV — set SHIPEASY_SERVER_KEY#{options[:i18n] ? " and SHIPEASY_CLIENT_KEY" : ""}"
         say "         • Rails credentials — bin/rails credentials:edit, then read"
