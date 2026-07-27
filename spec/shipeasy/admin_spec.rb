@@ -46,10 +46,12 @@ RSpec.describe "Shipeasy::Admin::Client", if: admin_available do
 
   it "exposes the resource groups, memoized" do
     client = build
+    # The four groups of the pruned admin surface. Exhaustive on purpose: a
+    # keep-set change that adds or drops a group must move this list too.
     expect(client.flags).to be_a(Shipeasy::Admin::Generated::FlagsApi)
-    expect(client.experiments).to be_a(Shipeasy::Admin::Generated::ExperimentsApi)
-    expect(client.connectors).to be_a(Shipeasy::Admin::Generated::ConnectorsApi)
-    expect(client.errors).to be_a(Shipeasy::Admin::Generated::ErrorsApi)
+    expect(client.killswitch).to be_a(Shipeasy::Admin::Generated::KillswitchApi)
+    expect(client.ops).to be_a(Shipeasy::Admin::Generated::OpsApi)
+    expect(client.comments).to be_a(Shipeasy::Admin::Generated::CommentsApi)
     expect(client.flags).to equal(client.flags)
   end
 

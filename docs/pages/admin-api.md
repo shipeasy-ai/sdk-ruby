@@ -2,9 +2,22 @@
 
 The base SDK *evaluates* flags, configs, and experiments
 (`Shipeasy.configure` + `Shipeasy::Client.new(user)`). The **Admin API client** is
-a separate, optional surface for *administering* those resources from server code
-— creating gates, starting experiments, managing configs, kill switches,
-universes, metrics, events, and more.
+a separate, optional surface for *administering* a small, deliberate slice of
+those resources from server code.
+
+It is **intentionally lean** — three groups of operations, not the whole admin
+API:
+
+| Group                    | What it covers                                                     |
+| ------------------------ | ------------------------------------------------------------------ |
+| Public ticket queue      | File a bug or feature request, list the queue, read and update one item, and hold its comment thread |
+| Kill-switch sub-switches | Add, edit, and delete the named nested switches on a kill switch    |
+| Flag whitelists          | Read a gate and manage the whitelist on its targeting stack         |
+
+Everything else in the admin API — experiments, metrics, events, configs, i18n,
+projects, connectors, keys — is deliberately **not** here. Reach for the Shipeasy
+CLI or MCP for those; they speak the complete spec. Keeping the vendored contract
+small is what keeps the generated client small.
 
 It is **off by default**: the `shipeasy-sdk` entrypoint never loads it, and its
 HTTP dependency (`faraday`) is optional. Opt in by adding faraday and requiring
@@ -50,25 +63,39 @@ Each resource group is a reader returning the matching generated api whose
 methods map 1:1 to the OpenAPI operations:
 
 ```ruby
-admin.flags.create_gate(create_gate_request)
-admin.experiments.create_experiment(create_experiment_request)
+# file a bug on the public ticket queue, then comment on it
+admin.ops.create_ops_item(create_ops_item_request)
+admin.comments.create_ops_comment("42", create_ops_comment_request)
+
+# manage a gate's whitelist (it lives on the targeting stack)
+admin.flags.update_gate("g_123", update_gate_request)
+
+# add or remove a kill switch's nested sub-switch
+admin.killswitch.set_killswitch_switch("k_123", request)
+admin.killswitch.unset_killswitch_switch("k_123", switch_key: "eu")
 ```
 
-Available groups: `flags`, `configs`, `killswitch`, `experiments`, `universes`,
-`attributes`, `metrics`, `events`, `ops`, `alerts`, `projects`, `profiles`,
-`keys`, `drafts`, `errors`, `connectors`, `api_keys`. The exact method names,
-request models, and response shapes come straight from the spec — explore them
-under `Shipeasy::Admin::Generated`.
+Available groups: `flags`, `killswitch`, `ops`, `comments`. The exact method
+names, request models, and response shapes come straight from the spec — explore
+them under `Shipeasy::Admin::Generated`.
 
 ## Regenerating
 
-The generated code lives in `lib/shipeasy_admin.rb` + `lib/shipeasy_admin/` and is
-committed. When the API contract changes, refresh the vendored spec and
-regenerate — only the generated tree is rewritten, never the `Client` shim:
+The generated code lives in `lib/shipeasy_admin.rb` + `lib/shipeasy_admin/` and is committed.
+`admin/openapi.json` is **not** the full Shipeasy spec — it is the pruned subset
+described above, produced in the monorepo by `scripts/sdk-spec/prune.mjs` from
+`scripts/sdk-spec/keep-set.json`. Do not hand-edit it, and do not replace it with
+the full `openapi.json`: that is what bloats the generated client back to
+megabytes.
 
-```sh
-cp <monorepo>/marketplace/openapi/openapi.json admin/openapi.json
-bash scripts/gen_admin.sh
+From the monorepo, re-vendor and regenerate in one step (only the generated code
+is rewritten, never the hand-written shim):
+
+```bash
+pnpm sdk:spec:regen sdk-ruby
 ```
+
+A monorepo pre-commit hook blocks any commit that changes the admin spec while
+this vendored copy is stale, so the two cannot silently drift.
 
 The generator version is pinned in `openapitools.json`.

@@ -44,22 +44,9 @@ module Shipeasy
       # Friendly reader name => generated Api class.
       APIS = {
         flags: Generated::FlagsApi,
-        configs: Generated::ConfigsApi,
         killswitch: Generated::KillswitchApi,
-        experiments: Generated::ExperimentsApi,
-        universes: Generated::UniversesApi,
-        attributes: Generated::AttributesApi,
-        metrics: Generated::MetricsApi,
-        events: Generated::EventsApi,
         ops: Generated::OpsApi,
-        alerts: Generated::AlertsApi,
-        projects: Generated::ProjectsApi,
-        profiles: Generated::ProfilesApi,
-        keys: Generated::KeysApi,
-        drafts: Generated::DraftsApi,
-        errors: Generated::ErrorsApi,
-        connectors: Generated::ConnectorsApi,
-        api_keys: Generated::APIKeysApi,
+        comments: Generated::CommentsApi,
       }.freeze
 
       # @param api_key [String] admin SDK key, sent as `Authorization: Bearer <api_key>`.
