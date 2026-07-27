@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 4.0.0 (2026-07-27)
 
 ### BREAKING: the optional Admin API client is now seven purpose-built operations
 
@@ -43,6 +43,19 @@ the client key with `Client.new(..., client_key:)` and it is sent as `X-SDK-Key`
 A monorepo pre-commit hook now blocks any commit that changes the admin spec
 while this vendored copy is stale, so the two can no longer silently drift — the
 condition that had let the vendored spec fall 41 operations behind.
+
+### Docs: where `see()` extras go in the chain
+
+`causes_the(subject)` and `.to(outcome)` are two halves of one sentence, so the
+docs no longer teach `causes_the(x).extras({...}).to(y)` — wedging the debug
+payload between the subject and the outcome splits the consequence in half and
+is hard to read. That shape is now a documented hard ban.
+
+`.to` fires synchronously here, so a trailing `.extras` after `.to` is still
+warned-and-ignored (it never raises into the rescue block) and its extras are
+dropped. Pass them inline as `.to(outcome, extras)`, or buffer them earlier with
+`Shipeasy.add_extras` when the context already exists above the rescue. Docs,
+snippet, skill and the `see.rb` header comment updated to match.
 
 ## 3.8.0 (2026-07-26)
 
