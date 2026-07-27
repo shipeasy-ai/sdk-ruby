@@ -12,16 +12,18 @@
 #
 # Dispatch model (differs from TS, which uses a microtask): `.to(outcome)` is
 # the terminal — it builds the wire event and fire-and-forgets the POST to
-# /collect. `causes_the` and `extras` are chainable setters called *before*
-# `.to`; `.to` also accepts the extras inline as a second arg, so there is no
-# ordering trap to remember:
+# /collect. `causes_the` and `.to` are two halves of one sentence and must stay
+# adjacent, so pass the extras inline on the terminal:
 #
 #   client.see(e).causes_the("checkout").to("use cached prices")
-#   client.see(e).causes_the("checkout").extras({ order_id: oid }).to("use cached prices")
 #   client.see(e).causes_the("checkout").to("use cached prices", { order_id: oid })
 #
+# `extras` remains a chainable setter callable before `.to`, but do NOT wedge it
+# between the subject and the outcome — it splits the consequence in half and is
+# hard to read.
+#
 # `.extras` chained AFTER `.to` is ignored with a warning (the report already
-# went out) — it never raises into the rescue block.
+# went out) — it never raises into the rescue block, but its extras are dropped.
 #
 # To attach context from anywhere in a request without threading it into the
 # rescue block, use the ambient buffer (see `Context` below):

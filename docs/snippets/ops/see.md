@@ -22,18 +22,26 @@ end
 begin
   charge(order)
 rescue => e
-  # .extras(hash)          structured fields attached to the report; call it
-  #                        BEFORE .to, or pass extras inline as .to(outcome, hash).
-  #                        (A stray .extras AFTER .to is ignored with a warning —
-  #                        it never raises into the rescue block.)
-  Shipeasy.see(e).causes_the("checkout").extras({ order_id: oid }).to("use cached prices")
-
-  # equivalent — extras folded into the terminal, no ordering to remember:
+  # .to(outcome, hash)     PREFERRED: fold the extras into the terminal. The
+  #                        consequence sentence stays whole and there is no
+  #                        ordering to remember.
   Shipeasy.see(e).causes_the("checkout").to("use cached prices", { order_id: oid })
+
+  # .to fires synchronously here, so a trailing .extras AFTER .to is ignored
+  # with a warning (it never raises into the rescue block) — the extras are
+  # DROPPED. Use the inline form above, or Shipeasy.add_extras below.
+  # Shipeasy.see(e).causes_the("checkout").to("use cached prices").extras({ order_id: oid })
+
+  # NEVER: extras wedged between the subject and the outcome — it splits the
+  # consequence sentence in half and is hard to read.
+  # Shipeasy.see(e).causes_the("checkout").extras({ order_id: oid }).to("use cached prices")
 end
 ```
 
 ### Attach context from anywhere with `Shipeasy.add_extras(...)`
+
+Prefer this over the inline form whenever the context already exists *above*
+the rescue — it keeps the catch site a clean one-liner.
 
 ```ruby
 # Buffer extras earlier in the request — from any layer, not just the rescue.

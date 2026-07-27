@@ -23,22 +23,32 @@ rescue => e
 end
 ```
 
-`causes_the` and `extras` are chainable setters callable in any order **before**
-`.to`. You can also fold the extras into the terminal as `.to(outcome, extras)`,
-so there is no ordering to remember:
+### Where extras go in the chain
+
+`causes_the(subject)` and `.to(outcome)` are two halves of one sentence and must
+stay adjacent, so fold the extras into the terminal:
 
 ```ruby
-Shipeasy.see(e)
-  .causes_the("checkout")
-  .extras({ order_id: oid })
-  .to("use cached prices")
-
-# equivalent, extras inline on the terminal:
+# PREFERRED — the consequence reads as one sentence:
 Shipeasy.see(e).causes_the("checkout").to("use cached prices", { order_id: oid })
 ```
 
-A stray `.extras` chained **after** `.to` is ignored with a warning (the report
-already shipped) — it never raises into your rescue block.
+`.to` fires the report synchronously, so a stray `.extras` chained **after**
+`.to` is ignored with a warning — it never raises into your rescue block, but
+the extras are **dropped**:
+
+```ruby
+# WRONG — extras silently lost:
+Shipeasy.see(e).causes_the("checkout").to("use cached prices").extras({ order_id: oid })
+
+# WRONG — extras wedged between the subject and the outcome. You read
+# "checkout … order_id … use cached prices" and lose the consequence.
+Shipeasy.see(e).causes_the("checkout").extras({ order_id: oid }).to("use cached prices")
+```
+
+When the context already exists *above* the rescue, prefer
+[`Shipeasy.add_extras`](#attach-context-from-anywhere-shipeasyadd_extras) over
+the inline form — it keeps the catch site a clean one-liner.
 
 ### Attach context from anywhere: `Shipeasy.add_extras`
 
@@ -70,7 +80,7 @@ A `Violation`'s name is a **stable fingerprint** — put variable data in
 `.extras`, never in the name:
 
 ```ruby
-Shipeasy.see_violation("inventory_negative").extras({ sku: sku }).to("clamp to zero")
+Shipeasy.see_violation("inventory_negative").to("clamp to zero", { sku: sku })
 ```
 
 ## Expected control flow (report nothing)

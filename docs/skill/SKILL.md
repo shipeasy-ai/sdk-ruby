@@ -126,10 +126,13 @@ rescue => e
 end
 ```
 
-Attach context with `.extras({...})` before `.to`, or inline as
-`.to(outcome, {...})`. To attach it from anywhere without threading it into the
-rescue, buffer it earlier with `Shipeasy.add_extras(order_id: id)` — it merges
-into every see() report later in the same (fiber-local, per-request) scope.
+Attach context inline on the terminal — `.to(outcome, {...})`. Never
+`.causes_the(x).extras({...}).to(y)`: it splits the consequence sentence in half.
+A stray `.extras` **after** `.to` is ignored with a warning (the report already
+shipped), so the extras are dropped. To attach context from anywhere without
+threading it into the rescue, buffer it earlier with
+`Shipeasy.add_extras(order_id: id)` — it merges into every see() report later in
+the same (fiber-local, per-request) scope.
 
 `Shipeasy.see_violation(name)` for non-exception problems;
 `Shipeasy.control_flow_exception(e).because(...)` marks expected control flow
