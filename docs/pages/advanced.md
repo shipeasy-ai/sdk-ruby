@@ -152,7 +152,16 @@ end
 ```
 
 ```erb
-<%# Ship it to your own team only — render it for staff / non-production. %>
+<%= Shipeasy.devtools_script_tag %>
+```
+
+Adding it unconditionally is fine: the overlay only opens for someone with a
+signed-in Shipeasy session, so on a page where nobody has authenticated it
+renders nothing and says nothing. Gating it on your own staff or environment
+check is **optional** — worth it only if you'd rather the bundle not load for
+end users at all:
+
+```erb
 <% if current_user&.staff? %><%= Shipeasy.devtools_script_tag %><% end %>
 ```
 
