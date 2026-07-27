@@ -14,18 +14,12 @@ require 'date'
 require 'time'
 
 module Shipeasy::Admin::Generated
-  class OpsItemStatus
-    OPEN = "open".freeze
-    PENDING_APPROVAL = "pending_approval".freeze
-    INVESTIGATING_BY_AI = "investigating_by_ai".freeze
-    IN_PROGRESS = "in_progress".freeze
-    BLOCKED = "blocked".freeze
-    READY_FOR_QA = "ready_for_qa".freeze
-    RESOLVED = "resolved".freeze
-    WONT_FIX = "wont_fix".freeze
+  class GateWhitelistAttr
+    EMAIL = "email".freeze
+    USER_ID = "user_id".freeze
 
     def self.all_vars
-      @all_vars ||= [OPEN, PENDING_APPROVAL, INVESTIGATING_BY_AI, IN_PROGRESS, BLOCKED, READY_FOR_QA, RESOLVED, WONT_FIX].freeze
+      @all_vars ||= [EMAIL, USER_ID].freeze
     end
 
     # Builds the enum from string
@@ -39,8 +33,8 @@ module Shipeasy::Admin::Generated
     # @param [String] The enum value in the form of the string
     # @return [String] The enum value
     def build_from_hash(value)
-      return value if OpsItemStatus.all_vars.include?(value)
-      raise "Invalid ENUM value #{value} for class #OpsItemStatus"
+      return value if GateWhitelistAttr.all_vars.include?(value)
+      raise "Invalid ENUM value #{value} for class #GateWhitelistAttr"
     end
   end
 end

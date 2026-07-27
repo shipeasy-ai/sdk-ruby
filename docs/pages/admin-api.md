@@ -1,95 +1,186 @@
 # Admin API client (optional) — `Shipeasy::Admin`
 
 The base SDK *evaluates* flags, configs, and experiments
-(`Shipeasy.configure` + `Shipeasy::Client.new(user)`). The **Admin API client** is
-a separate, optional surface for *administering* a small, deliberate slice of
-those resources from server code.
+([`configure`](configuration.md) + `Shipeasy::Client.new(user)`). The **Admin API
+client** is a separate, optional surface for *administering* a small, deliberate
+slice of those resources from server code.
 
-It is **intentionally lean** — three groups of operations, not the whole admin
-API:
+It is **intentionally lean** — three capabilities, seven operations, not the
+whole admin API:
 
-| Group                    | What it covers                                                     |
-| ------------------------ | ------------------------------------------------------------------ |
-| Public ticket queue      | File a bug or feature request, list the queue, read and update one item, and hold its comment thread |
-| Kill-switch sub-switches | Add, edit, and delete the named nested switches on a kill switch    |
-| Flag whitelists          | Read a gate and manage the whitelist on its targeting stack         |
+| Capability           | Operations                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| File a public ticket (client key) | `create_public_bug`, `create_public_feature_request`                                              |
+| Toggle a kill switch | `toggle_killswitch`                                                                               |
+| Manage a whitelist   | `get_gate_whitelist`, `set_gate_whitelist`, `add_to_gate_whitelist`, `remove_from_gate_whitelist` |
 
-Everything else in the admin API — experiments, metrics, events, configs, i18n,
-projects, connectors, keys — is deliberately **not** here. Reach for the Shipeasy
-CLI or MCP for those; they speak the complete spec. Keeping the vendored contract
-small is what keeps the generated client small.
+Everything else in the admin API — listing, generic CRUD, experiments, metrics,
+events, configs, i18n, projects, connectors, keys — is deliberately **not** here.
+Reach for the Shipeasy CLI or MCP for those; they speak the complete spec.
+Keeping the vendored contract small is what keeps the generated client small.
 
-It is **off by default**: the `shipeasy-sdk` entrypoint never loads it, and its
-HTTP dependency (`faraday`) is optional. Opt in by adding faraday and requiring
-the admin client:
-
-```ruby
-# Gemfile
-gem "faraday"
-```
+It is **off by default**: `require "shipeasy-sdk"` never loads it, and its HTTP
+dependency (`faraday`) is optional. Require it explicitly:
 
 ```ruby
+require "faraday"
 require "shipeasy/admin"
 ```
 
 The client is **generated from the Shipeasy OpenAPI spec**, so it is a raw, 1:1
-projection of the REST API: id-based, basis-points, snake_case. It does *not* add
-the name→id resolution or percent→basis-point conveniences of the Shipeasy
-CLI/MCP — reach for those tools when you want the ergonomic surface, and for this
-client when you want a typed, programmatic mirror of the API.
+projection of the REST API: `snake_case` methods, id-based paths, typed request
+models. It does *not* add the percent→basis-point conveniences you get from the
+Shipeasy CLI/MCP — reach for those tools when you want the ergonomic surface, and
+for this client when you want a typed, programmatic mirror of the API.
 
 ## Authenticate and scope
 
 Mint an **admin** SDK key (`sdk_admin_…`) and scope every call to a project.
 
 ```ruby
-require "shipeasy/admin"
-
 admin = Shipeasy::Admin::Client.new(
-  api_key: ENV.fetch("SHIPEASY_ADMIN_KEY"),       # Authorization: Bearer <key>
-  project_id: ENV.fetch("SHIPEASY_PROJECT_ID"),   # X-Project-Id on every request
-  # base_url: "http://localhost:3000",            # defaults to https://shipeasy.ai
+  api_key: ENV.fetch("SHIPEASY_ADMIN_KEY"),        # Authorization: Bearer <key>
+  project_id: ENV.fetch("SHIPEASY_PROJECT_ID"),    # sent as X-Project-Id on every call
+  # Only needed for the two public ticket operations — see "File a public
+  # ticket" below. They send it as X-SDK-Key, on the edge host.
+  client_key: ENV["SHIPEASY_CLIENT_KEY"],
+  # base_url defaults to https://shipeasy.ai; use http://localhost:3000 for local dev
 )
-
-flags = admin.flags.list_gates
 ```
 
-`project_id` is sent as the `X-Project-Id` header on every request. Individual
-operations also accept an explicit `x_project_id:` argument to override per call.
+`project_id` is sent as the `X-Project-Id` header on every request. It is
+optional on the constructor — individual operations also accept an explicit
+`x_project_id:` option to override per call.
+
+## File a public ticket
+
+Two dedicated endpoints, so there is no discriminator to set and no fields from
+the other kind in the request. Both accept just a `title`.
+
+These two are the **public** intake, and they differ from the other five
+operations in three ways worth knowing before you call them:
+
+- They authenticate with a **client** key (`sdk_client_…`) carrying the
+  `tickets:public_create` scope — not the admin key. Client keys are meant to be
+  embedded in shipped code, which is the point: a CLI, an installer, or a
+  browser bundle can file a ticket without holding an admin credential.
+- They are served by the Shipeasy **edge worker** (`api.shipeasy.ai`), not the
+  admin API host. The generated client already routes them there.
+- Every item is filed as `pending_approval`, parked out of the work queue until
+  a human promotes it in the dashboard, and repeat submissions of the same title
+  dedupe against the open ticket already tracking them (HTTP 200 with
+  `deduped: true` instead of a second ticket).
+
+The project is the key's own project — there is no project id to pass and no way
+to file into someone else's queue. The project must have public ticket creation
+enabled.
+
+```ruby
+filed = admin.ops.create_public_bug(
+  Shipeasy::Admin::Generated::CreatePublicBugRequest.new(
+    title: "Checkout 500s on Safari",
+    steps_to_reproduce: "Open the cart on iOS Safari and tap the price row.",
+    actual_result: "The primary CTA overlaps the price.",
+    priority: "high",
+  ),
+)
+puts filed.number
+
+admin.ops.create_public_feature_request(
+  Shipeasy::Admin::Generated::CreatePublicFeatureRequestRequest.new(
+    title: "Dark mode",
+    use_case: "Reduce eye strain at night",
+  ),
+)
+```
+
+## Toggle a kill switch
+
+`toggle_killswitch` reads the current value and publishes its opposite in one
+call. Every body field is optional, so it widens from "flip it" to "set exactly
+this, on this environment". The body rides in `opts` because the spec marks it
+optional:
+
+```ruby
+ks = "payments.checkout" # id (ksw_…) or name
+Req = Shipeasy::Admin::Generated::ToggleKillswitchRequest
+
+# Flip the kill switch itself on prod — no body at all.
+admin.killswitch.toggle_killswitch(ks)
+
+# Flip one nested sub-switch on prod (created off→on if it doesn't exist yet).
+admin.killswitch.toggle_killswitch(ks, toggle_killswitch_request: Req.new(switch_key: "eu_region"))
+
+# Set it idempotently — a retry can't undo the first call.
+admin.killswitch.toggle_killswitch(
+  ks, toggle_killswitch_request: Req.new(switch_key: "eu_region", value: true),
+)
+
+# …on a chosen environment.
+result = admin.killswitch.toggle_killswitch(
+  ks, toggle_killswitch_request: Req.new(switch_key: "eu_region", value: true, env: "staging"),
+)
+puts "#{result.previous} -> #{result.value}" # false -> true
+```
+
+Omitting `value` (or passing `nil`) means **flip**; passing an explicit
+`true`/`false` means **set**. Omitting `env` targets `prod`.
+
+## Manage a flag's whitelist
+
+A gate's whitelist is the always-first allowlist that admits named identities
+before any targeting rule or percentage rollout runs — the same list the
+dashboard's Whitelist block edits.
+
+```ruby
+gate = "new_checkout" # id (gate_…) or name
+G = Shipeasy::Admin::Generated
+
+wl = admin.flags.get_gate_whitelist(gate)
+puts wl.attr, wl.entries # "email" ["alice@acme.dev"]
+
+# Let one more person in (idempotent — already-listed entries are skipped).
+admin.flags.add_to_gate_whitelist(gate, G::AddToGateWhitelistRequest.new(entries: ["bob@acme.dev"]))
+
+# Revoke one.
+admin.flags.remove_from_gate_whitelist(
+  gate, G::RemoveFromGateWhitelistRequest.new(entries: ["bob@acme.dev"]),
+)
+
+# Pin an exact list, re-key onto user ids, or clear it entirely.
+admin.flags.set_gate_whitelist(gate, G::SetGateWhitelistRequest.new(attr: "user_id", entries: ["usr_123"]))
+admin.flags.set_gate_whitelist(gate, G::SetGateWhitelistRequest.new(entries: []))
+```
+
+`set_gate_whitelist` is the only call that can switch `attr` or drop the block —
+`entries: []` removes the whitelist from the gate. Adding to a whitelist keyed on
+the other attribute is rejected with a 409 rather than silently re-keying
+everyone already listed.
 
 ## Resource groups
 
-Each resource group is a reader returning the matching generated api whose
-methods map 1:1 to the OpenAPI operations:
+Each resource group is a lazily-constructed, memoized reader: `#flags`,
+`#killswitch`, `#ops`. Those three are the whole surface.
 
-```ruby
-# file a bug on the public ticket queue, then comment on it
-admin.ops.create_ops_item(create_ops_item_request)
-admin.comments.create_ops_comment("42", create_ops_comment_request)
+The exact method names, request models, and response shapes come straight from
+the spec — explore them under `Shipeasy::Admin::Generated`.
 
-# manage a gate's whitelist (it lives on the targeting stack)
-admin.flags.update_gate("g_123", update_gate_request)
+## Escape hatch
 
-# add or remove a kill switch's nested sub-switch
-admin.killswitch.set_killswitch_switch("k_123", request)
-admin.killswitch.unset_killswitch_switch("k_123", switch_key: "eu")
-```
-
-Available groups: `flags`, `killswitch`, `ops`, `comments`. The exact method
-names, request models, and response shapes come straight from the spec — explore
-them under `Shipeasy::Admin::Generated`.
+`admin.api_client` exposes the underlying generated `ApiClient` for advanced use
+(custom headers, retries, a shared Faraday connection).
 
 ## Regenerating
 
-The generated code lives in `lib/shipeasy_admin.rb` + `lib/shipeasy_admin/` and is committed.
-`admin/openapi.json` is **not** the full Shipeasy spec — it is the pruned subset
-described above, produced in the monorepo by `scripts/sdk-spec/prune.mjs` from
-`scripts/sdk-spec/keep-set.json`. Do not hand-edit it, and do not replace it with
-the full `openapi.json`: that is what bloats the generated client back to
-megabytes.
+The generated code lives under `lib/shipeasy_admin*` and is committed.
+`admin/openapi.json` is **not** the full Shipeasy spec — it is the dedicated
+server-SDK contract, hand-authored in the monorepo as
+`marketplace/openapi/spec/openapi-sdk.yaml` and bundled to `openapi-sdk.json`.
+Do not hand-edit it, and do not replace it with the full `openapi.json`: that is
+what bloats the generated client back to megabytes.
 
-From the monorepo, re-vendor and regenerate in one step (only the generated code
-is rewritten, never the hand-written shim):
+From the monorepo, re-vendor and regenerate in one step (only the generated
+files are rewritten, never the `Client` shim):
 
 ```bash
 pnpm sdk:spec:regen sdk-ruby

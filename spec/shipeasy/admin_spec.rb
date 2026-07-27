@@ -46,13 +46,30 @@ RSpec.describe "Shipeasy::Admin::Client", if: admin_available do
 
   it "exposes the resource groups, memoized" do
     client = build
-    # The four groups of the pruned admin surface. Exhaustive on purpose: a
-    # keep-set change that adds or drops a group must move this list too.
+    # The three groups of the lean admin surface. Exhaustive on purpose: a
+    # change to the SDK spec that adds or drops a group must move this list too.
     expect(client.flags).to be_a(Shipeasy::Admin::Generated::FlagsApi)
     expect(client.killswitch).to be_a(Shipeasy::Admin::Generated::KillswitchApi)
     expect(client.ops).to be_a(Shipeasy::Admin::Generated::OpsApi)
-    expect(client.comments).to be_a(Shipeasy::Admin::Generated::CommentsApi)
+    expect(client).not_to respond_to(:comments)
     expect(client.flags).to equal(client.flags)
+  end
+
+  it "carries the seven operations of the SDK contract" do
+    client = build
+    expect(client.ops).to respond_to(:create_public_bug, :create_public_feature_request)
+    expect(client.killswitch).to respond_to(:toggle_killswitch)
+    expect(client.flags).to respond_to(
+      :get_gate_whitelist, :set_gate_whitelist, :add_to_gate_whitelist, :remove_from_gate_whitelist
+    )
+  end
+
+  it "wires the client key used by the public ticket intake" do
+    # The two public ticket ops authenticate with a CLIENT key (X-SDK-Key) on
+    # the edge worker, not the admin bearer.
+    expect(build.api_client.config.api_key["clientSdkKey"]).to be_nil
+    scoped = Shipeasy::Admin::Client.new(api_key: "sdk_admin_test", client_key: "sdk_client_test")
+    expect(scoped.api_client.config.api_key["clientSdkKey"]).to eq("sdk_client_test")
   end
 
   it "defaults to the production host" do
