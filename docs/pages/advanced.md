@@ -173,7 +173,7 @@ also carries that identity as `data-user` — the user's traits minus
 so a Ruby-backend + JS-frontend app never flips from anonymous to identified
 after hydration; both sides bucket on the same identity from the first render. A
 purely anonymous request (only `anonymous_id`, or an empty user) emits **no**
-`data-user`. See `experiment-platform/18-identity-bucketing.md`.
+`data-user`. See [Identity & bucketing](https://docs.shipeasy.ai/get-started/identity-and-bucketing).
 
 ## Evaluation internals
 

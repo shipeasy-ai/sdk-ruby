@@ -128,4 +128,4 @@ More — the on-the-spot override helpers and a working example
 
 [Shipeasy-SAL 1.0](./LICENSE) — source-available, non-commercial-use, permitted
 as a Shipeasy client. Evaluation is tested against the cross-language
-MurmurHash3 vectors in `experiment-platform/04-evaluation.md`.
+MurmurHash3 vectors in [Rollouts & bucketing](https://docs.shipeasy.ai/flags/gates/rollouts).
