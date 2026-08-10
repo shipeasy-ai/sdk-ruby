@@ -45,7 +45,7 @@ jobs:
         run: bash scripts/gen_admin.sh
 
       - name: Open or update the sync PR
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           # Falls back to the default GITHUB_TOKEN. Set the SPEC_SYNC_TOKEN
           # repo secret to a PAT if you want the PR to trigger test.yml
