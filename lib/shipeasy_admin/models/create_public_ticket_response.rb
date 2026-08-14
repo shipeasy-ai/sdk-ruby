@@ -14,7 +14,7 @@ require 'date'
 require 'time'
 
 module Shipeasy::Admin::Generated
-  # Response for the public ticket intake. A fresh file returns `201` with `id` + `number`; a repeat of a report already tracked by an open ticket returns `200` with that ticket's `number` and `deduped: true`.
+  # Response for the public ticket intake. A fresh file returns `201` with `id` + `number`; a repeat of a report already tracked by an open ticket returns `200` with that ticket's `number` and `deduped: true` — plus `updated: true` when a `dedupKey` re-triggered it and its fields were refreshed.
   class CreatePublicTicketResponse < ApiModelBase
     # The new item's id. Absent on a deduped response — nothing was created, so there is no new id to report.
     attr_accessor :id
@@ -25,12 +25,16 @@ module Shipeasy::Admin::Generated
     # `true` when an open ticket already tracked this report and nothing was filed (HTTP 200). Absent on a fresh file (HTTP 201).
     attr_accessor :deduped
 
+    # `true` when the deduped ticket was REFRESHED from this payload and got a \"re-triggered\" comment — only ever set alongside `deduped` on a submission that carried a `dedupKey`. Absent when the existing ticket was returned untouched.
+    attr_accessor :updated
+
     # Attribute mapping from ruby-style variable name to JSON key.
     def self.attribute_map
       {
         :'id' => :'id',
         :'number' => :'number',
-        :'deduped' => :'deduped'
+        :'deduped' => :'deduped',
+        :'updated' => :'updated'
       }
     end
 
@@ -49,7 +53,8 @@ module Shipeasy::Admin::Generated
       {
         :'id' => :'String',
         :'number' => :'Integer',
-        :'deduped' => :'Boolean'
+        :'deduped' => :'Boolean',
+        :'updated' => :'Boolean'
       }
     end
 
@@ -87,6 +92,10 @@ module Shipeasy::Admin::Generated
 
       if attributes.key?(:'deduped')
         self.deduped = attributes[:'deduped']
+      end
+
+      if attributes.key?(:'updated')
+        self.updated = attributes[:'updated']
       end
     end
 
@@ -127,7 +136,8 @@ module Shipeasy::Admin::Generated
       self.class == o.class &&
           id == o.id &&
           number == o.number &&
-          deduped == o.deduped
+          deduped == o.deduped &&
+          updated == o.updated
     end
 
     # @see the `==` method
@@ -139,7 +149,7 @@ module Shipeasy::Admin::Generated
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [id, number, deduped].hash
+      [id, number, deduped, updated].hash
     end
 
     # Builds the object from hash

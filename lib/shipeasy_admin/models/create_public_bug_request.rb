@@ -14,7 +14,7 @@ require 'date'
 require 'time'
 
 module Shipeasy::Admin::Generated
-  # Body for `POST /ops/bug`. The same bug fields as `CreateBugRequest`, minus the `type` discriminator — the path already says what is being filed.
+  # Body for `POST /ops/bug`. The same bug fields as `CreateBugRequest`, minus the `type` discriminator — the path already says what is being filed, plus the public intake's own `dedupKey`.
   class CreatePublicBugRequest < ApiModelBase
     # One-line bug title (no leading/trailing whitespace).
     attr_accessor :title
@@ -58,6 +58,9 @@ module Shipeasy::Admin::Generated
     # Arbitrary capture context, or `null`.
     attr_accessor :context
 
+    # Caller-chosen dedupe identity for this report, stored on the ticket. A repeat submission carrying the same key does NOT file a second ticket: the open ticket already holding that key is refreshed from this payload (title and the report fields overwritten, a \"re-triggered\" comment appended) and returned with `deduped: true` and `updated: true`. Triage state a human owns — status, priority, assignee, tags — is left untouched, and a `resolved`/`wont_fix` ticket no longer holds the key, so a failure that comes back after being closed files a fresh ticket. Omit it to fall back to the derived (title + `context.step`) dedupe, whose repeats return the existing ticket unchanged.
+    attr_accessor :dedup_key
+
     # Where this bug's completion notification lands.
     attr_accessor :notify
 
@@ -100,6 +103,7 @@ module Shipeasy::Admin::Generated
         :'user_agent' => :'userAgent',
         :'viewport' => :'viewport',
         :'context' => :'context',
+        :'dedup_key' => :'dedupKey',
         :'notify' => :'notify'
       }
     end
@@ -131,6 +135,7 @@ module Shipeasy::Admin::Generated
         :'user_agent' => :'String',
         :'viewport' => :'String',
         :'context' => :'Hash<String, Object>',
+        :'dedup_key' => :'String',
         :'notify' => :'NotificationTarget'
       }
     end
@@ -235,6 +240,10 @@ module Shipeasy::Admin::Generated
         end
       end
 
+      if attributes.key?(:'dedup_key')
+        self.dedup_key = attributes[:'dedup_key']
+      end
+
       if attributes.key?(:'notify')
         self.notify = attributes[:'notify']
       end
@@ -282,6 +291,10 @@ module Shipeasy::Admin::Generated
         invalid_properties.push('invalid value for "viewport", the character length must be smaller than or equal to 40.')
       end
 
+      if !@dedup_key.nil? && @dedup_key.to_s.length > 200
+        invalid_properties.push('invalid value for "dedup_key", the character length must be smaller than or equal to 200.')
+      end
+
       invalid_properties
     end
 
@@ -298,6 +311,7 @@ module Shipeasy::Admin::Generated
       return false if !@expected_result.nil? && @expected_result.to_s.length > 8000
       return false if !@user_agent.nil? && @user_agent.to_s.length > 500
       return false if !@viewport.nil? && @viewport.to_s.length > 40
+      return false if !@dedup_key.nil? && @dedup_key.to_s.length > 200
       true
     end
 
@@ -386,6 +400,20 @@ module Shipeasy::Admin::Generated
       @viewport = viewport
     end
 
+    # Custom attribute writer method with validation
+    # @param [Object] dedup_key Value to be assigned
+    def dedup_key=(dedup_key)
+      if dedup_key.nil?
+        fail ArgumentError, 'dedup_key cannot be nil'
+      end
+
+      if dedup_key.to_s.length > 200
+        fail ArgumentError, 'invalid value for "dedup_key", the character length must be smaller than or equal to 200.'
+      end
+
+      @dedup_key = dedup_key
+    end
+
     # Checks equality by comparing each attribute.
     # @param [Object] Object to be compared
     def ==(o)
@@ -405,6 +433,7 @@ module Shipeasy::Admin::Generated
           user_agent == o.user_agent &&
           viewport == o.viewport &&
           context == o.context &&
+          dedup_key == o.dedup_key &&
           notify == o.notify
     end
 
@@ -417,7 +446,7 @@ module Shipeasy::Admin::Generated
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [title, steps_to_reproduce, actual_result, expected_result, priority, status, assignee_id, subscribers, tags, reporter_email, page_url, user_agent, viewport, context, notify].hash
+      [title, steps_to_reproduce, actual_result, expected_result, priority, status, assignee_id, subscribers, tags, reporter_email, page_url, user_agent, viewport, context, dedup_key, notify].hash
     end
 
     # Builds the object from hash
