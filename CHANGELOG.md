@@ -1,5 +1,33 @@
 # Changelog
 
+## 4.1.0 (2026-08-14)
+
+### A public ticket can name its own dedupe key
+
+`Ops#create_public_bug` and `Ops#create_public_feature_request` accept a
+`dedup_key`. Without one, the intake derives a ticket's dedupe identity from
+(title, `context.step`) — a grain that fits a retried installer and little else,
+so a caller that already knows what "the same failure" means either filed
+near-duplicates (any wording change misses) or had its repeat swallowed as a
+no-op that left the ticket stale.
+
+With one, the caller owns that grain: a repeat carrying the same key re-triggers
+the open ticket holding it. Its fields are refreshed from the new payload and a
+"re-triggered" comment records the occurrence, so one recurring failure stays one
+ticket with its history intact. The response then carries `updated: true`
+alongside `deduped`. Triage state a human owns — status, priority, assignee,
+tags — is untouched, and a resolved ticket no longer holds the key, so a failure
+that comes back after being closed files fresh.
+
+Additive: omit `dedup_key` and behaviour is unchanged.
+
+### Fixed
+
+The README generator's license footer still cited `experiment-platform/…`, a
+private-repo path no reader could open. It now links the public Rollouts &
+bucketing page — the same fix `4.0.0`'s successor applied to `README.md` itself,
+which the generator promptly overwrote (and which turned CI red).
+
 ## 4.0.0 (2026-07-27)
 
 ### BREAKING: the optional Admin API client is now seven purpose-built operations
