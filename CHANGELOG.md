@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 4.2.0 (2026-10-26)
 
 ### Public tickets accept `tags`
 
