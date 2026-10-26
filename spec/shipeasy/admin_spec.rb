@@ -72,6 +72,15 @@ RSpec.describe "Shipeasy::Admin::Client", if: admin_available do
     expect(scoped.api_client.config.api_key["clientSdkKey"]).to eq("sdk_client_test")
   end
 
+  it "serializes tag names on a public ticket and bounds them" do
+    # Tags go out as plain names; the server matches each case-insensitively
+    # against the project's existing tags and creates the ones it lacks.
+    model = Shipeasy::Admin::Generated::CreatePublicBugRequest
+    bug = model.new(title: "Checkout 500", tags: %w[ios Checkout])
+    expect(bug.to_hash[:tags]).to eq(%w[ios Checkout])
+    expect { model.new(title: "x", tags: (1..51).map { |i| "t#{i}" }) }.to raise_error(ArgumentError)
+  end
+
   it "defaults to the production host" do
     client = Shipeasy::Admin::Client.new(api_key: "sdk_admin_test")
     expect(client.api_client.config.host).to eq("shipeasy.ai")

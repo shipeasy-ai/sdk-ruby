@@ -40,7 +40,7 @@ module Shipeasy::Admin::Generated
     # Emails of teammates to subscribe to this item's Slack pings at creation.
     attr_accessor :subscribers
 
-    # Tag names to attach at creation (get-or-created by name, deduped case-insensitively).
+    # Tag names to label the item with, e.g. `[\"ios\", \"checkout\"]`. Each name is matched case-insensitively against the project's existing tags and reuses that tag (keeping its stored casing) when one matches; a name with no match creates a new project tag. Here the tags only label the ticket: the project's tag rules (owner/status/agent routing) are not applied to a public report while it awaits approval.
     attr_accessor :tags
 
     # Email of the reporter, or `null`.
@@ -283,6 +283,10 @@ module Shipeasy::Admin::Generated
         invalid_properties.push('invalid value for "expected_result", the character length must be smaller than or equal to 8000.')
       end
 
+      if !@tags.nil? && @tags.length > 50
+        invalid_properties.push('invalid value for "tags", number of items must be less than or equal to 50.')
+      end
+
       if !@user_agent.nil? && @user_agent.to_s.length > 500
         invalid_properties.push('invalid value for "user_agent", the character length must be smaller than or equal to 500.')
       end
@@ -309,6 +313,7 @@ module Shipeasy::Admin::Generated
       return false if !@steps_to_reproduce.nil? && @steps_to_reproduce.to_s.length > 8000
       return false if !@actual_result.nil? && @actual_result.to_s.length > 8000
       return false if !@expected_result.nil? && @expected_result.to_s.length > 8000
+      return false if !@tags.nil? && @tags.length > 50
       return false if !@user_agent.nil? && @user_agent.to_s.length > 500
       return false if !@viewport.nil? && @viewport.to_s.length > 40
       return false if !@dedup_key.nil? && @dedup_key.to_s.length > 200
@@ -378,6 +383,20 @@ module Shipeasy::Admin::Generated
       end
 
       @expected_result = expected_result
+    end
+
+    # Custom attribute writer method with validation
+    # @param [Object] tags Value to be assigned
+    def tags=(tags)
+      if tags.nil?
+        fail ArgumentError, 'tags cannot be nil'
+      end
+
+      if tags.length > 50
+        fail ArgumentError, 'invalid value for "tags", number of items must be less than or equal to 50.'
+      end
+
+      @tags = tags
     end
 
     # Custom attribute writer method with validation
