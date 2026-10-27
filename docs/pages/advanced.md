@@ -22,7 +22,7 @@ the unit isn't enrolled and under
 
 Pass `c.private_attributes` to [`Shipeasy.configure`](configuration.md) to strip
 the named keys from every outbound event (`track` props and `see` extras) before
-it leaves the process (LD/Statsig `privateAttributes`). The server evaluates
+it leaves the process (`privateAttributes`). The server evaluates
 locally, so private attrs **still drive targeting** — they just never reach
 `/collect`:
 
