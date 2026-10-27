@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
   spec.description = "Server SDK for Shipeasy. Polls /sdk/flags and /sdk/experiments, evaluates gates and experiments locally, forwards exposures + metrics to /collect, and (when loaded inside Rails) auto-mounts i18n_head_tags / i18n_inline_data / i18n_script_tag / i18n_t view helpers for the Shipeasy string-manager CDN."
   spec.authors     = ["Shipeasy, Inc."]
   spec.email       = ["sdk@shipeasy.ai"]
-  spec.homepage    = "https://github.com/shipeasy-ai/sdk-ruby"
+  spec.homepage    = "https://shipeasy.ai"
 
   # Source-available, non-commercial-use, permitted as a Shipeasy client.
   # Full text in LICENSE. RubyGems doesn't recognize the SPDX-style id, so
@@ -15,7 +15,7 @@ Gem::Specification.new do |spec|
   # licenses) and link customers to the LICENSE file via metadata.
   spec.license  = "Nonstandard"
   spec.metadata = {
-    "homepage_uri"          => "https://github.com/shipeasy-ai/sdk-ruby",
+    "homepage_uri"          => "https://shipeasy.ai",
     "source_code_uri"       => "https://github.com/shipeasy-ai/sdk-ruby",
     "bug_tracker_uri"       => "https://github.com/shipeasy-ai/sdk-ruby/issues",
     "documentation_uri"     => "https://docs.shipeasy.ai",

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Gem metadata: `homepage` / `homepage_uri` are `https://shipeasy.ai` instead
+  of the GitHub repo (`source_code_uri` still points there).
+
 ## 4.2.0 (2026-10-26)
 
 ### Public tickets accept `tags`
