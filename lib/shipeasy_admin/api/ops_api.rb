@@ -1,7 +1,7 @@
 =begin
 #Shipeasy Admin API (server-SDK surface)
 
-#The slice of the Shipeasy admin API that the published server SDKs expose as their optional `AdminClient`. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Three capabilities, nothing else:  - **File a public ticket** — a bug or a feature request onto the project's ops queue. - **Toggle a kill switch** — flip the switch itself, or one of its named sub-switches, on one environment. - **Manage a flag's whitelist** — read, replace, add to, or remove from the allowlist that admits specific identities ahead of every targeting rule.  Everything else in the admin API is reachable through the Shipeasy CLI and MCP server, which speak the complete contract (`openapi.yaml`).
+#The slice of the Shipeasy admin API that the published server SDKs expose as their optional `AdminClient`. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Four capabilities, nothing else:  - **List the ops queue** — read the project's tickets, filtered by type, status, priority, owner, reporter (`reporter`) and close time (`closedSince`). - **File a public ticket** — a bug or a feature request onto the project's ops queue. - **Toggle a kill switch** — flip the switch itself, or one of its named sub-switches, on one environment. - **Manage a flag's whitelist** — read, replace, add to, or remove from the allowlist that admits specific identities ahead of every targeting rule.  Everything else in the admin API is reachable through the Shipeasy CLI and MCP server, which speak the complete contract (`openapi.yaml`).
 
 The version of the OpenAPI document: 2.0.0
 
@@ -151,6 +151,132 @@ module Shipeasy::Admin::Generated
       data, status_code, headers = @api_client.call_api(:POST, local_var_path, new_options)
       if @api_client.config.debugging
         @api_client.config.logger.debug "API called: OpsApi#create_public_feature_request\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # List the operational queue
+    # Returns the unified ops queue (bugs, feature requests, errors, alerts, measurement plans) in work order — highest priority first, oldest first within a priority — so consumers work it top-down. Every filter is applied in SQL before paging, and filters combine with AND. Human-gated holding states (items awaiting human sign-off in the dashboard) are never returned by `all`/default status.  **Filters:** `type` (one item type), `status` (one lifecycle status, or `unresolved` — everything not yet `resolved`/`wont_fix`), `priority` (one triage priority), `owner` (one person or agent), `reporter` (one filer's email), `closedSince` (drop items closed before a time), and `scope=ready` — the items ready to be picked up right now: `open`, with nobody working them (no open run), and either unowned or reopened (sent back to `open` after an earlier run finished).  **Paging:** `limit` is the page size and `offset` the number of items to skip. The order is stable, so walk the queue with `offset += limit`; a page shorter than `limit` is the last one.  **Use case:** Pull the open queue to triage — e.g. every `bug` still `open` — before working items down one by one.
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @option opts [String] :type Filter by item type, or &#x60;all&#x60; (the default). Every type a returned item can carry is filterable, including the auto-filed ones. (default to 'all')
+    # @option opts [String] :status Filter by one lifecycle status, &#x60;unresolved&#x60; for every status that is not &#x60;resolved&#x60; or &#x60;wont_fix&#x60;, or &#x60;all&#x60; for every status. Defaults to &#x60;all&#x60; over HTTP; the CLI and MCP tool default to &#x60;unresolved&#x60;, so pass &#x60;all&#x60; there to include resolved and won&#39;t-fix items. The human-gated holding state (&#x60;pending_approval&#x60;) is excluded from &#x60;unresolved&#x60; and &#x60;all&#x60;, and returned only when requested as the exact status. (default to 'all')
+    # @option opts [String] :priority Filter by triage priority, or &#x60;all&#x60; (the default). Items with no priority set are returned only under &#x60;all&#x60;. (default to 'all')
+    # @option opts [String] :scope &#x60;ready&#x60; narrows to the items ready to be picked up right now: status &#x60;open&#x60;, no open run (nobody has acked it and is still working), and either unowned (no person and no agent) or reopened (sent back to &#x60;open&#x60; after an earlier run finished). Leave &#x60;status&#x60; unset with it. &#x60;all&#x60; (the default) applies no such narrowing. (default to 'all')
+    # @option opts [String] :qa_questions &#x60;open&#x60; narrows to the items with at least one unanswered QA question — the backlog QA answers first (read each with &#x60;ops get&#x60;, answer with &#x60;ops qa-questions answer&#x60;). &#x60;all&#x60; (the default) applies no such narrowing. (default to 'all')
+    # @option opts [Integer] :limit Page size — max items to return (1–500). A page shorter than &#x60;limit&#x60; is the last one. (default to 200)
+    # @option opts [Integer] :offset Number of items to skip before the page starts. Defaults to 0. The order is stable, so &#x60;offset +&#x3D; limit&#x60; walks the queue page by page. (default to 0)
+    # @option opts [String] :owner Narrow to items owned by one person OR one agent. Matches a person by &#x60;users.id&#x60;, email, or display name, and an agent by connector id, display name, or kebab-case handle — e.g. &#x60;owner&#x3D;Claude&#x60; or &#x60;owner&#x3D;alice@acme.dev&#x60;. Case-insensitive exact match.
+    # @option opts [String] :reporter Narrow to items filed by one reporter — an email, matched case-insensitive and exact against &#x60;reporterEmail&#x60;. Items with no reporter never match. While set, &#x60;status&#x3D;all&#x60; also returns &#x60;pending_approval&#x60; items: public intake files every ticket as &#x60;pending_approval&#x60;, and a reporter must see the ticket they just filed.
+    # @option opts [Time] :closed_since ISO-8601 timestamp. Items still being worked are always returned; &#x60;resolved&#x60; and &#x60;wont_fix&#x60; items only when they closed at or after this time (see &#x60;closedAt&#x60;). Combines with &#x60;status&#x60; like any other filter.
+    # @return [Array<ListOpsItemsResponseInner>]
+    def list_ops_items(opts = {})
+      data, _status_code, _headers = list_ops_items_with_http_info(opts)
+      data
+    end
+
+    # List the operational queue
+    # Returns the unified ops queue (bugs, feature requests, errors, alerts, measurement plans) in work order — highest priority first, oldest first within a priority — so consumers work it top-down. Every filter is applied in SQL before paging, and filters combine with AND. Human-gated holding states (items awaiting human sign-off in the dashboard) are never returned by &#x60;all&#x60;/default status.  **Filters:** &#x60;type&#x60; (one item type), &#x60;status&#x60; (one lifecycle status, or &#x60;unresolved&#x60; — everything not yet &#x60;resolved&#x60;/&#x60;wont_fix&#x60;), &#x60;priority&#x60; (one triage priority), &#x60;owner&#x60; (one person or agent), &#x60;reporter&#x60; (one filer&#39;s email), &#x60;closedSince&#x60; (drop items closed before a time), and &#x60;scope&#x3D;ready&#x60; — the items ready to be picked up right now: &#x60;open&#x60;, with nobody working them (no open run), and either unowned or reopened (sent back to &#x60;open&#x60; after an earlier run finished).  **Paging:** &#x60;limit&#x60; is the page size and &#x60;offset&#x60; the number of items to skip. The order is stable, so walk the queue with &#x60;offset +&#x3D; limit&#x60;; a page shorter than &#x60;limit&#x60; is the last one.  **Use case:** Pull the open queue to triage — e.g. every &#x60;bug&#x60; still &#x60;open&#x60; — before working items down one by one.
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @option opts [String] :type Filter by item type, or &#x60;all&#x60; (the default). Every type a returned item can carry is filterable, including the auto-filed ones. (default to 'all')
+    # @option opts [String] :status Filter by one lifecycle status, &#x60;unresolved&#x60; for every status that is not &#x60;resolved&#x60; or &#x60;wont_fix&#x60;, or &#x60;all&#x60; for every status. Defaults to &#x60;all&#x60; over HTTP; the CLI and MCP tool default to &#x60;unresolved&#x60;, so pass &#x60;all&#x60; there to include resolved and won&#39;t-fix items. The human-gated holding state (&#x60;pending_approval&#x60;) is excluded from &#x60;unresolved&#x60; and &#x60;all&#x60;, and returned only when requested as the exact status. (default to 'all')
+    # @option opts [String] :priority Filter by triage priority, or &#x60;all&#x60; (the default). Items with no priority set are returned only under &#x60;all&#x60;. (default to 'all')
+    # @option opts [String] :scope &#x60;ready&#x60; narrows to the items ready to be picked up right now: status &#x60;open&#x60;, no open run (nobody has acked it and is still working), and either unowned (no person and no agent) or reopened (sent back to &#x60;open&#x60; after an earlier run finished). Leave &#x60;status&#x60; unset with it. &#x60;all&#x60; (the default) applies no such narrowing. (default to 'all')
+    # @option opts [String] :qa_questions &#x60;open&#x60; narrows to the items with at least one unanswered QA question — the backlog QA answers first (read each with &#x60;ops get&#x60;, answer with &#x60;ops qa-questions answer&#x60;). &#x60;all&#x60; (the default) applies no such narrowing. (default to 'all')
+    # @option opts [Integer] :limit Page size — max items to return (1–500). A page shorter than &#x60;limit&#x60; is the last one. (default to 200)
+    # @option opts [Integer] :offset Number of items to skip before the page starts. Defaults to 0. The order is stable, so &#x60;offset +&#x3D; limit&#x60; walks the queue page by page. (default to 0)
+    # @option opts [String] :owner Narrow to items owned by one person OR one agent. Matches a person by &#x60;users.id&#x60;, email, or display name, and an agent by connector id, display name, or kebab-case handle — e.g. &#x60;owner&#x3D;Claude&#x60; or &#x60;owner&#x3D;alice@acme.dev&#x60;. Case-insensitive exact match.
+    # @option opts [String] :reporter Narrow to items filed by one reporter — an email, matched case-insensitive and exact against &#x60;reporterEmail&#x60;. Items with no reporter never match. While set, &#x60;status&#x3D;all&#x60; also returns &#x60;pending_approval&#x60; items: public intake files every ticket as &#x60;pending_approval&#x60;, and a reporter must see the ticket they just filed.
+    # @option opts [Time] :closed_since ISO-8601 timestamp. Items still being worked are always returned; &#x60;resolved&#x60; and &#x60;wont_fix&#x60; items only when they closed at or after this time (see &#x60;closedAt&#x60;). Combines with &#x60;status&#x60; like any other filter.
+    # @return [Array<(Array<ListOpsItemsResponseInner>, Integer, Hash)>] Array<ListOpsItemsResponseInner> data, response status code and response headers
+    def list_ops_items_with_http_info(opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.list_ops_items ...'
+      end
+      allowable_values = ["bug", "feature_request", "error", "alert", "measure_plan", "all"]
+      if @api_client.config.client_side_validation && opts[:'type'] && !allowable_values.include?(opts[:'type'])
+        fail ArgumentError, "invalid value for \"type\", must be one of #{allowable_values}"
+      end
+      allowable_values = ["open", "pending_approval", "investigating_by_ai", "in_progress", "blocked", "ready_for_qa", "resolved", "wont_fix", "unresolved", "all"]
+      if @api_client.config.client_side_validation && opts[:'status'] && !allowable_values.include?(opts[:'status'])
+        fail ArgumentError, "invalid value for \"status\", must be one of #{allowable_values}"
+      end
+      allowable_values = ["nice_to_have", "medium", "high", "critical", "all"]
+      if @api_client.config.client_side_validation && opts[:'priority'] && !allowable_values.include?(opts[:'priority'])
+        fail ArgumentError, "invalid value for \"priority\", must be one of #{allowable_values}"
+      end
+      allowable_values = ["all", "ready"]
+      if @api_client.config.client_side_validation && opts[:'scope'] && !allowable_values.include?(opts[:'scope'])
+        fail ArgumentError, "invalid value for \"scope\", must be one of #{allowable_values}"
+      end
+      allowable_values = ["all", "open"]
+      if @api_client.config.client_side_validation && opts[:'qa_questions'] && !allowable_values.include?(opts[:'qa_questions'])
+        fail ArgumentError, "invalid value for \"qa_questions\", must be one of #{allowable_values}"
+      end
+      if @api_client.config.client_side_validation && !opts[:'limit'].nil? && opts[:'limit'] > 500
+        fail ArgumentError, 'invalid value for "opts[:"limit"]" when calling OpsApi.list_ops_items, must be smaller than or equal to 500.'
+      end
+
+      if @api_client.config.client_side_validation && !opts[:'limit'].nil? && opts[:'limit'] < 1
+        fail ArgumentError, 'invalid value for "opts[:"limit"]" when calling OpsApi.list_ops_items, must be greater than or equal to 1.'
+      end
+
+      if @api_client.config.client_side_validation && !opts[:'offset'].nil? && opts[:'offset'] > 100000
+        fail ArgumentError, 'invalid value for "opts[:"offset"]" when calling OpsApi.list_ops_items, must be smaller than or equal to 100000.'
+      end
+
+      if @api_client.config.client_side_validation && !opts[:'offset'].nil? && opts[:'offset'] < 0
+        fail ArgumentError, 'invalid value for "opts[:"offset"]" when calling OpsApi.list_ops_items, must be greater than or equal to 0.'
+      end
+
+      # resource path
+      local_var_path = '/api/admin/ops'
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+      query_params[:'type'] = opts[:'type'] if !opts[:'type'].nil?
+      query_params[:'status'] = opts[:'status'] if !opts[:'status'].nil?
+      query_params[:'priority'] = opts[:'priority'] if !opts[:'priority'].nil?
+      query_params[:'scope'] = opts[:'scope'] if !opts[:'scope'].nil?
+      query_params[:'qaQuestions'] = opts[:'qa_questions'] if !opts[:'qa_questions'].nil?
+      query_params[:'limit'] = opts[:'limit'] if !opts[:'limit'].nil?
+      query_params[:'offset'] = opts[:'offset'] if !opts[:'offset'].nil?
+      query_params[:'owner'] = opts[:'owner'] if !opts[:'owner'].nil?
+      query_params[:'reporter'] = opts[:'reporter'] if !opts[:'reporter'].nil?
+      query_params[:'closedSince'] = opts[:'closed_since'] if !opts[:'closed_since'].nil?
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body]
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'Array<ListOpsItemsResponseInner>'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.list_ops_items",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:GET, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#list_ops_items\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
       end
       return data, status_code, headers
     end

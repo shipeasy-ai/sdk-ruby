@@ -1,7 +1,7 @@
 =begin
 #Shipeasy Admin API (server-SDK surface)
 
-#The slice of the Shipeasy admin API that the published server SDKs expose as their optional `AdminClient`. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Three capabilities, nothing else:  - **File a public ticket** — a bug or a feature request onto the project's ops queue. - **Toggle a kill switch** — flip the switch itself, or one of its named sub-switches, on one environment. - **Manage a flag's whitelist** — read, replace, add to, or remove from the allowlist that admits specific identities ahead of every targeting rule.  Everything else in the admin API is reachable through the Shipeasy CLI and MCP server, which speak the complete contract (`openapi.yaml`).
+#The slice of the Shipeasy admin API that the published server SDKs expose as their optional `AdminClient`. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Four capabilities, nothing else:  - **List the ops queue** — read the project's tickets, filtered by type, status, priority, owner, reporter (`reporter`) and close time (`closedSince`). - **File a public ticket** — a bug or a feature request onto the project's ops queue. - **Toggle a kill switch** — flip the switch itself, or one of its named sub-switches, on one environment. - **Manage a flag's whitelist** — read, replace, add to, or remove from the allowlist that admits specific identities ahead of every targeting rule.  Everything else in the admin API is reachable through the Shipeasy CLI and MCP server, which speak the complete contract (`openapi.yaml`).
 
 The version of the OpenAPI document: 2.0.0
 
@@ -19,6 +19,7 @@ require 'shipeasy_admin/configuration'
 
 # Models
 require 'shipeasy_admin/models/add_to_gate_whitelist_request'
+require 'shipeasy_admin/models/connector_data'
 require 'shipeasy_admin/models/create_public_bug_request'
 require 'shipeasy_admin/models/create_public_feature_request_request'
 require 'shipeasy_admin/models/create_public_ticket_response'
@@ -27,13 +28,37 @@ require 'shipeasy_admin/models/error'
 require 'shipeasy_admin/models/error_code'
 require 'shipeasy_admin/models/gate_whitelist'
 require 'shipeasy_admin/models/gate_whitelist_attr'
+require 'shipeasy_admin/models/github_connector_data'
+require 'shipeasy_admin/models/github_connector_data_issue'
+require 'shipeasy_admin/models/github_pr_link'
 require 'shipeasy_admin/models/killswitch_value'
+require 'shipeasy_admin/models/list_ops_items_response_inner'
+require 'shipeasy_admin/models/measure_plan_resource'
+require 'shipeasy_admin/models/measure_plan_step'
 require 'shipeasy_admin/models/notification_target'
 require 'shipeasy_admin/models/notification_target_slack_channel'
+require 'shipeasy_admin/models/ops_alert_context'
+require 'shipeasy_admin/models/ops_alert_metric_summary'
+require 'shipeasy_admin/models/ops_alert_rule_summary'
+require 'shipeasy_admin/models/ops_browser_context'
+require 'shipeasy_admin/models/ops_error_context'
+require 'shipeasy_admin/models/ops_investigation_state'
+require 'shipeasy_admin/models/ops_item_context'
+require 'shipeasy_admin/models/ops_item_context_error_chart'
+require 'shipeasy_admin/models/ops_item_context_error_chart_series_inner'
+require 'shipeasy_admin/models/ops_item_owner'
+require 'shipeasy_admin/models/ops_item_owner_agent'
+require 'shipeasy_admin/models/ops_item_owner_user'
 require 'shipeasy_admin/models/ops_item_priority'
 require 'shipeasy_admin/models/ops_item_status'
+require 'shipeasy_admin/models/ops_measure_plan_context'
+require 'shipeasy_admin/models/ops_run'
+require 'shipeasy_admin/models/ops_run_action'
+require 'shipeasy_admin/models/ops_run_action_or_null'
 require 'shipeasy_admin/models/remove_from_gate_whitelist_request'
 require 'shipeasy_admin/models/set_gate_whitelist_request'
+require 'shipeasy_admin/models/slack_connector_data'
+require 'shipeasy_admin/models/slack_connector_data_message'
 require 'shipeasy_admin/models/toggle_killswitch_request'
 require 'shipeasy_admin/models/toggle_killswitch_response'
 
