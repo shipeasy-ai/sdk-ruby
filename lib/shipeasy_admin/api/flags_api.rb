@@ -1,7 +1,7 @@
 =begin
 #Shipeasy Admin API (server-SDK surface)
 
-#The slice of the Shipeasy admin API that the published server SDKs expose as their optional `AdminClient`. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Three capabilities, nothing else:  - **File a public ticket** — a bug or a feature request onto the project's ops queue. - **Toggle a kill switch** — flip the switch itself, or one of its named sub-switches, on one environment. - **Manage a flag's whitelist** — read, replace, add to, or remove from the allowlist that admits specific identities ahead of every targeting rule.  Everything else in the admin API is reachable through the Shipeasy CLI and MCP server, which speak the complete contract (`openapi.yaml`).
+#The slice of the Shipeasy admin API that the published server SDKs expose as their optional `AdminClient`. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Four capabilities, nothing else:  - **List the ops queue** — read the project's tickets, filtered by type, status, priority, owner, reporter (`reporter`) and close time (`closedSince`). - **File a public ticket** — a bug or a feature request onto the project's ops queue. - **Toggle a kill switch** — flip the switch itself, or one of its named sub-switches, on one environment. - **Manage a flag's whitelist** — read, replace, add to, or remove from the allowlist that admits specific identities ahead of every targeting rule.  Everything else in the admin API is reachable through the Shipeasy CLI and MCP server, which speak the complete contract (`openapi.yaml`).
 
 The version of the OpenAPI document: 2.0.0
 
@@ -21,7 +21,7 @@ module Shipeasy::Admin::Generated
     end
     # Add entries to a gate's whitelist
     # Adds identities to the gate's whitelist, creating the block if the gate doesn't have one yet. Entries already on the list are skipped, so the call is idempotent and safe to retry.  Adding to a gate that already has a whitelist keyed on the other attribute is rejected (409) rather than silently re-keying the entries already there — use `PUT` to switch `attr` deliberately.  **Use case:** Let one more customer into a private beta without reading the current list first.
-    # @param id [String] Stable opaque gate id (&#x60;gate_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
+    # @param id [String] Stable opaque gate id (&#x60;gat_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
     # @param add_to_gate_whitelist_request [AddToGateWhitelistRequest] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
@@ -33,7 +33,7 @@ module Shipeasy::Admin::Generated
 
     # Add entries to a gate&#39;s whitelist
     # Adds identities to the gate&#39;s whitelist, creating the block if the gate doesn&#39;t have one yet. Entries already on the list are skipped, so the call is idempotent and safe to retry.  Adding to a gate that already has a whitelist keyed on the other attribute is rejected (409) rather than silently re-keying the entries already there — use &#x60;PUT&#x60; to switch &#x60;attr&#x60; deliberately.  **Use case:** Let one more customer into a private beta without reading the current list first.
-    # @param id [String] Stable opaque gate id (&#x60;gate_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
+    # @param id [String] Stable opaque gate id (&#x60;gat_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
     # @param add_to_gate_whitelist_request [AddToGateWhitelistRequest] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
@@ -106,7 +106,7 @@ module Shipeasy::Admin::Generated
 
     # Read a gate's whitelist
     # Returns the gate's whitelist — the always-first allowlist that admits the listed identities before any targeting rule or percentage rollout is evaluated.  A gate with no whitelist returns `entries: []` (and the default `attr`), never a 404 — so a caller can read-then-write without special-casing the empty gate.  **Use case:** Check whether an account is already let through before adding it.
-    # @param id [String] Stable opaque gate id (&#x60;gate_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
+    # @param id [String] Stable opaque gate id (&#x60;gat_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
     # @return [GateWhitelist]
@@ -117,7 +117,7 @@ module Shipeasy::Admin::Generated
 
     # Read a gate&#39;s whitelist
     # Returns the gate&#39;s whitelist — the always-first allowlist that admits the listed identities before any targeting rule or percentage rollout is evaluated.  A gate with no whitelist returns &#x60;entries: []&#x60; (and the default &#x60;attr&#x60;), never a 404 — so a caller can read-then-write without special-casing the empty gate.  **Use case:** Check whether an account is already let through before adding it.
-    # @param id [String] Stable opaque gate id (&#x60;gate_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
+    # @param id [String] Stable opaque gate id (&#x60;gat_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
     # @return [Array<(GateWhitelist, Integer, Hash)>] GateWhitelist data, response status code and response headers
@@ -180,7 +180,7 @@ module Shipeasy::Admin::Generated
 
     # Remove entries from a gate's whitelist
     # Removes identities from the gate's whitelist. Entries that aren't on the list are skipped, so the call is idempotent.  Removing the last entry leaves an empty whitelist block in place; to drop the block itself use `PUT` with `entries: []`.  **Use case:** Revoke one beta tester's access without touching anyone else's.
-    # @param id [String] Stable opaque gate id (&#x60;gate_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
+    # @param id [String] Stable opaque gate id (&#x60;gat_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
     # @param remove_from_gate_whitelist_request [RemoveFromGateWhitelistRequest] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
@@ -192,7 +192,7 @@ module Shipeasy::Admin::Generated
 
     # Remove entries from a gate&#39;s whitelist
     # Removes identities from the gate&#39;s whitelist. Entries that aren&#39;t on the list are skipped, so the call is idempotent.  Removing the last entry leaves an empty whitelist block in place; to drop the block itself use &#x60;PUT&#x60; with &#x60;entries: []&#x60;.  **Use case:** Revoke one beta tester&#39;s access without touching anyone else&#39;s.
-    # @param id [String] Stable opaque gate id (&#x60;gate_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
+    # @param id [String] Stable opaque gate id (&#x60;gat_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
     # @param remove_from_gate_whitelist_request [RemoveFromGateWhitelistRequest] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
@@ -265,7 +265,7 @@ module Shipeasy::Admin::Generated
 
     # Replace a gate's whitelist
     # Replaces the gate's whole whitelist with `entries`, creating the block if the gate didn't have one. Idempotent — the same call twice leaves the same list.  This is the only whitelist call that can switch `attr` (`email` ⇄ `user_id`) or clear the block: `entries: []` removes the whitelist from the gate entirely.  **Use cases**  - **Pin an exact list** — `{ \"entries\": [\"alice@acme.dev\", \"bob@acme.dev\"] }`. - **Switch to user ids** — `{ \"attr\": \"user_id\", \"entries\": [\"usr_123\"] }`. - **Drop the whitelist** — `{ \"entries\": [] }`.
-    # @param id [String] Stable opaque gate id (&#x60;gate_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
+    # @param id [String] Stable opaque gate id (&#x60;gat_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
     # @param set_gate_whitelist_request [SetGateWhitelistRequest] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
@@ -277,7 +277,7 @@ module Shipeasy::Admin::Generated
 
     # Replace a gate&#39;s whitelist
     # Replaces the gate&#39;s whole whitelist with &#x60;entries&#x60;, creating the block if the gate didn&#39;t have one. Idempotent — the same call twice leaves the same list.  This is the only whitelist call that can switch &#x60;attr&#x60; (&#x60;email&#x60; ⇄ &#x60;user_id&#x60;) or clear the block: &#x60;entries: []&#x60; removes the whitelist from the gate entirely.  **Use cases**  - **Pin an exact list** — &#x60;{ \&quot;entries\&quot;: [\&quot;alice@acme.dev\&quot;, \&quot;bob@acme.dev\&quot;] }&#x60;. - **Switch to user ids** — &#x60;{ \&quot;attr\&quot;: \&quot;user_id\&quot;, \&quot;entries\&quot;: [\&quot;usr_123\&quot;] }&#x60;. - **Drop the whitelist** — &#x60;{ \&quot;entries\&quot;: [] }&#x60;.
-    # @param id [String] Stable opaque gate id (&#x60;gate_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
+    # @param id [String] Stable opaque gate id (&#x60;gat_…&#x60;) or the gate&#39;s &#x60;name&#x60;.
     # @param set_gate_whitelist_request [SetGateWhitelistRequest] 
     # @param [Hash] opts the optional parameters
     # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
