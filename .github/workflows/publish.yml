@@ -13,7 +13,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # rake release tags v$VERSION and pushes it
       id-token: write # for trusted publishing to RubyGems
     steps:
       - uses: actions/checkout@v7
