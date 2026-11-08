@@ -24,6 +24,8 @@ module Shipeasy::Admin::Generated
 
     attr_accessor :measure_plan
 
+    attr_accessor :reporter
+
     attr_accessor :error_chart
 
     # Attribute mapping from ruby-style variable name to JSON key.
@@ -33,6 +35,7 @@ module Shipeasy::Admin::Generated
         :'error' => :'error',
         :'alert' => :'alert',
         :'measure_plan' => :'measurePlan',
+        :'reporter' => :'reporter',
         :'error_chart' => :'errorChart'
       }
     end
@@ -54,6 +57,7 @@ module Shipeasy::Admin::Generated
         :'error' => :'OpsErrorContext',
         :'alert' => :'OpsAlertContext',
         :'measure_plan' => :'OpsMeasurePlanContext',
+        :'reporter' => :'OpsReporterContext',
         :'error_chart' => :'OpsItemContextErrorChart'
       }
     end
@@ -96,6 +100,10 @@ module Shipeasy::Admin::Generated
         self.measure_plan = attributes[:'measure_plan']
       end
 
+      if attributes.key?(:'reporter')
+        self.reporter = attributes[:'reporter']
+      end
+
       if attributes.key?(:'error_chart')
         self.error_chart = attributes[:'error_chart']
       end
@@ -125,6 +133,7 @@ module Shipeasy::Admin::Generated
           error == o.error &&
           alert == o.alert &&
           measure_plan == o.measure_plan &&
+          reporter == o.reporter &&
           error_chart == o.error_chart
     end
 
@@ -137,7 +146,7 @@ module Shipeasy::Admin::Generated
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [browser, error, alert, measure_plan, error_chart].hash
+      [browser, error, alert, measure_plan, reporter, error_chart].hash
     end
 
     # Builds the object from hash

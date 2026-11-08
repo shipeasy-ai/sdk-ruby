@@ -52,6 +52,9 @@ module Shipeasy::Admin::Generated
     # Arbitrary capture context, or `null`.
     attr_accessor :context
 
+    # The reporter's SDK identity — the same user attribute object your app passes to the Shipeasy SDK to evaluate flags (`user_id`, `anonymous_id`, `email`, plus any targeting attributes). When present, Shipeasy evaluates every feature flag, kill switch and running experiment for this user at filing time and stores the result on the ticket as `context.reporter`, so triage (and any agent working the ticket) sees exactly which features the reporter had on. The browser and React Native devtools attach the identified user automatically. Omit it (or send `null`) to file without a feature snapshot.
+    attr_accessor :user
+
     # Caller-chosen dedupe identity for this request, stored on the ticket. Behaves exactly as on `POST /ops/bug`: a repeat carrying the same key refreshes the open ticket already holding it (fields overwritten, a \"re-triggered\" comment appended) and returns `deduped: true` with `updated: true`, instead of filing a second one.
     attr_accessor :dedup_key
 
@@ -95,6 +98,7 @@ module Shipeasy::Admin::Generated
         :'page_url' => :'pageUrl',
         :'user_agent' => :'userAgent',
         :'context' => :'context',
+        :'user' => :'user',
         :'dedup_key' => :'dedupKey',
         :'notify' => :'notify'
       }
@@ -125,6 +129,7 @@ module Shipeasy::Admin::Generated
         :'page_url' => :'String',
         :'user_agent' => :'String',
         :'context' => :'Hash<String, Object>',
+        :'user' => :'Hash<String, Object>',
         :'dedup_key' => :'String',
         :'notify' => :'NotificationTarget'
       }
@@ -139,6 +144,7 @@ module Shipeasy::Admin::Generated
         :'page_url',
         :'user_agent',
         :'context',
+        :'user',
         :'notify'
       ])
     end
@@ -219,6 +225,12 @@ module Shipeasy::Admin::Generated
         end
       end
 
+      if attributes.key?(:'user')
+        if (value = attributes[:'user']).is_a?(Hash)
+          self.user = value
+        end
+      end
+
       if attributes.key?(:'dedup_key')
         self.dedup_key = attributes[:'dedup_key']
       end
@@ -266,6 +278,10 @@ module Shipeasy::Admin::Generated
         invalid_properties.push('invalid value for "user_agent", the character length must be smaller than or equal to 500.')
       end
 
+      if !@user.nil? && @user.length > 50
+        invalid_properties.push('invalid value for "user", number of items must be less than or equal to 50.')
+      end
+
       if !@dedup_key.nil? && @dedup_key.to_s.length > 200
         invalid_properties.push('invalid value for "dedup_key", the character length must be smaller than or equal to 200.')
       end
@@ -285,6 +301,7 @@ module Shipeasy::Admin::Generated
       return false if !@use_case.nil? && @use_case.to_s.length > 8000
       return false if !@tags.nil? && @tags.length > 50
       return false if !@user_agent.nil? && @user_agent.to_s.length > 500
+      return false if !@user.nil? && @user.length > 50
       return false if !@dedup_key.nil? && @dedup_key.to_s.length > 200
       true
     end
@@ -365,6 +382,16 @@ module Shipeasy::Admin::Generated
     end
 
     # Custom attribute writer method with validation
+    # @param [Object] user Value to be assigned
+    def user=(user)
+      if !user.nil? && user.length > 50
+        fail ArgumentError, 'invalid value for "user", number of items must be less than or equal to 50.'
+      end
+
+      @user = user
+    end
+
+    # Custom attribute writer method with validation
     # @param [Object] dedup_key Value to be assigned
     def dedup_key=(dedup_key)
       if dedup_key.nil?
@@ -395,6 +422,7 @@ module Shipeasy::Admin::Generated
           page_url == o.page_url &&
           user_agent == o.user_agent &&
           context == o.context &&
+          user == o.user &&
           dedup_key == o.dedup_key &&
           notify == o.notify
     end
@@ -408,7 +436,7 @@ module Shipeasy::Admin::Generated
     # Calculates hash code according to all attributes.
     # @return [Integer] Hash code
     def hash
-      [title, description, use_case, priority, status, assignee_id, subscribers, tags, reporter_email, page_url, user_agent, context, dedup_key, notify].hash
+      [title, description, use_case, priority, status, assignee_id, subscribers, tags, reporter_email, page_url, user_agent, context, user, dedup_key, notify].hash
     end
 
     # Builds the object from hash
