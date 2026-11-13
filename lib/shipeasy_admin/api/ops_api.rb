@@ -1,7 +1,7 @@
 =begin
-#Shipeasy Admin API (server-SDK surface)
+#Shipeasy Admin API
 
-#The slice of the Shipeasy admin API that the published server SDKs expose as their optional `AdminClient`. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Four capabilities, nothing else:  - **List the ops queue** — read the project's tickets, filtered by type, status, priority, owner, reporter (`reporter`) and close time (`closedSince`). - **File a public ticket** — a bug or a feature request onto the project's ops queue. - **Toggle a kill switch** — flip the switch itself, or one of its named sub-switches, on one environment. - **Manage a flag's whitelist** — read, replace, add to, or remove from the allowlist that admits specific identities ahead of every targeting rule.  Everything else in the admin API is reachable through the Shipeasy CLI and MCP server, which speak the complete contract (`openapi.yaml`).
+#REST API for managing feature gates, experiments, configs, universes, and killswitches in a Shipeasy project. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Mint admin keys via `POST /api/admin/keys` with `type: \"admin\"`. Keys expire after 90 days; rotate with the `revoke` action.
 
 The version of the OpenAPI document: 2.0.0
 
@@ -19,6 +19,158 @@ module Shipeasy::Admin::Generated
     def initialize(api_client = ApiClient.default)
       @api_client = api_client
     end
+    # Ack an item (start a run)
+    # Acknowledge a queue item — a person or an AI agent declaring \"I'm on this now\". Opens a run: stamps who picked the item up and when, assigns them as owner, and moves the item into the matching working status (`investigating_by_ai` for an AI ack, `in_progress` for a human one). The dashboard renders the open run as a live working indicator (which agent + time since the run started).  **AI ack.** Pass `agent` with your own agent type (`claude`, `cursor`, `copilot`, `jules`; `gemini` is also accepted and is normalized to `jules` on receipt) and, when you have one, the run's `sessionId` so the dashboard can deep-link to the session. If the project has no connected trigger connector of that type the call fails with `AGENT_NOT_CONNECTED` — list the available agents with `ops agents list` and use one of those (or connect the agent under Settings → Triggers).  **Launching.** When the named agent has a connected trigger and you pass no `sessionId`, the ack also fires that trigger — a new provider run starts working the item. Pass `launch: false` to only claim the item and record the run (you are doing the work yourself), without starting one. A launch on an item linked to others (see `group` on `ops get`) is only allowed on the group's master — any other member answers `409` `INVALID_TRANSITION`, naming the master to ack instead.  **Completion.** The run closes automatically on the loop's final actions — linking the fixing PR (`link-pr`), an ops-notify escalation, or a completion status change (`ready_for_qa`/`resolved`) — and the dashboard then shows the run result (final action, PR, duration, session link).  **One session per item.** An AI ack on an item whose open run belongs to another live agent session answers `409` `ALREADY_EXISTS`, naming that run — skip the item, the other session is working it. Your own run is adopted, not refused: re-ack with its `runId` (a fired run's prompt names it; a previous ack returned it) or the same `sessionId`. A run a trigger fire claimed is adopted by the FIRST session to ack it. A run silent past the stuck-run threshold (6h), or `takeover: true`, is superseded instead. A human ack never replaces an open agent run.  **Use case:** Call this first when picking an item up, so the team sees who/what is working on it in real time.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @option opts [AckOpsItemRequest] :ack_ops_item_request 
+    # @return [AckOpsItemResponse]
+    def ack_ops_item(handle, opts = {})
+      data, _status_code, _headers = ack_ops_item_with_http_info(handle, opts)
+      data
+    end
+
+    # Ack an item (start a run)
+    # Acknowledge a queue item — a person or an AI agent declaring \&quot;I&#39;m on this now\&quot;. Opens a run: stamps who picked the item up and when, assigns them as owner, and moves the item into the matching working status (&#x60;investigating_by_ai&#x60; for an AI ack, &#x60;in_progress&#x60; for a human one). The dashboard renders the open run as a live working indicator (which agent + time since the run started).  **AI ack.** Pass &#x60;agent&#x60; with your own agent type (&#x60;claude&#x60;, &#x60;cursor&#x60;, &#x60;copilot&#x60;, &#x60;jules&#x60;; &#x60;gemini&#x60; is also accepted and is normalized to &#x60;jules&#x60; on receipt) and, when you have one, the run&#39;s &#x60;sessionId&#x60; so the dashboard can deep-link to the session. If the project has no connected trigger connector of that type the call fails with &#x60;AGENT_NOT_CONNECTED&#x60; — list the available agents with &#x60;ops agents list&#x60; and use one of those (or connect the agent under Settings → Triggers).  **Launching.** When the named agent has a connected trigger and you pass no &#x60;sessionId&#x60;, the ack also fires that trigger — a new provider run starts working the item. Pass &#x60;launch: false&#x60; to only claim the item and record the run (you are doing the work yourself), without starting one. A launch on an item linked to others (see &#x60;group&#x60; on &#x60;ops get&#x60;) is only allowed on the group&#39;s master — any other member answers &#x60;409&#x60; &#x60;INVALID_TRANSITION&#x60;, naming the master to ack instead.  **Completion.** The run closes automatically on the loop&#39;s final actions — linking the fixing PR (&#x60;link-pr&#x60;), an ops-notify escalation, or a completion status change (&#x60;ready_for_qa&#x60;/&#x60;resolved&#x60;) — and the dashboard then shows the run result (final action, PR, duration, session link).  **One session per item.** An AI ack on an item whose open run belongs to another live agent session answers &#x60;409&#x60; &#x60;ALREADY_EXISTS&#x60;, naming that run — skip the item, the other session is working it. Your own run is adopted, not refused: re-ack with its &#x60;runId&#x60; (a fired run&#39;s prompt names it; a previous ack returned it) or the same &#x60;sessionId&#x60;. A run a trigger fire claimed is adopted by the FIRST session to ack it. A run silent past the stuck-run threshold (6h), or &#x60;takeover: true&#x60;, is superseded instead. A human ack never replaces an open agent run.  **Use case:** Call this first when picking an item up, so the team sees who/what is working on it in real time.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @option opts [AckOpsItemRequest] :ack_ops_item_request 
+    # @return [Array<(AckOpsItemResponse, Integer, Hash)>] AckOpsItemResponse data, response status code and response headers
+    def ack_ops_item_with_http_info(handle, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.ack_ops_item ...'
+      end
+      # verify the required parameter 'handle' is set
+      if @api_client.config.client_side_validation && handle.nil?
+        fail ArgumentError, "Missing the required parameter 'handle' when calling OpsApi.ack_ops_item"
+      end
+      if @api_client.config.client_side_validation && handle.to_s.length > 128
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.ack_ops_item, the character length must be smaller than or equal to 128.'
+      end
+
+      if @api_client.config.client_side_validation && handle.to_s.length < 1
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.ack_ops_item, the character length must be greater than or equal to 1.'
+      end
+
+      # resource path
+      local_var_path = '/api/admin/ops/{handle}/ack'.sub('{handle}', CGI.escape(handle.to_s))
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      # HTTP header 'Content-Type'
+      content_type = @api_client.select_header_content_type(['application/json'])
+      if !content_type.nil?
+          header_params['Content-Type'] = content_type
+      end
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(opts[:'ack_ops_item_request'])
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'AckOpsItemResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.ack_ops_item",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:POST, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#ack_ops_item\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # File a queue item
+    # Files one queue item — a bug report or a feature request — and fires the project's connectors (GitHub issue / Slack). `type` selects which; only the two user-fileable types are accepted (`error`/`alert` tickets are auto-filed by the platform). Returns the new id and per-project number.  **Use cases**  - **File a bug** — `{ \"type\": \"bug\", \"title\": \"Checkout 500s on Safari\", \"stepsToReproduce\": \"…\" }`. - **File a feature request** — `{ \"type\": \"feature_request\", \"title\": \"Dark mode\", \"priority\": \"nice_to_have\" }`.
+    # @param create_ops_item_request [CreateOpsItemRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [CreateOpsItemResponse]
+    def create_ops_item(create_ops_item_request, opts = {})
+      data, _status_code, _headers = create_ops_item_with_http_info(create_ops_item_request, opts)
+      data
+    end
+
+    # File a queue item
+    # Files one queue item — a bug report or a feature request — and fires the project&#39;s connectors (GitHub issue / Slack). &#x60;type&#x60; selects which; only the two user-fileable types are accepted (&#x60;error&#x60;/&#x60;alert&#x60; tickets are auto-filed by the platform). Returns the new id and per-project number.  **Use cases**  - **File a bug** — &#x60;{ \&quot;type\&quot;: \&quot;bug\&quot;, \&quot;title\&quot;: \&quot;Checkout 500s on Safari\&quot;, \&quot;stepsToReproduce\&quot;: \&quot;…\&quot; }&#x60;. - **File a feature request** — &#x60;{ \&quot;type\&quot;: \&quot;feature_request\&quot;, \&quot;title\&quot;: \&quot;Dark mode\&quot;, \&quot;priority\&quot;: \&quot;nice_to_have\&quot; }&#x60;.
+    # @param create_ops_item_request [CreateOpsItemRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [Array<(CreateOpsItemResponse, Integer, Hash)>] CreateOpsItemResponse data, response status code and response headers
+    def create_ops_item_with_http_info(create_ops_item_request, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.create_ops_item ...'
+      end
+      # verify the required parameter 'create_ops_item_request' is set
+      if @api_client.config.client_side_validation && create_ops_item_request.nil?
+        fail ArgumentError, "Missing the required parameter 'create_ops_item_request' when calling OpsApi.create_ops_item"
+      end
+      # resource path
+      local_var_path = '/api/admin/ops'
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      # HTTP header 'Content-Type'
+      content_type = @api_client.select_header_content_type(['application/json'])
+      if !content_type.nil?
+          header_params['Content-Type'] = content_type
+      end
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(create_ops_item_request)
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'CreateOpsItemResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.create_ops_item",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:POST, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#create_ops_item\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
     # File a bug
     # Files one bug onto a project's queue, awaiting human approval. This is the **public** intake: it authenticates with a *client* SDK key rather than an admin key, so it can be called from a CLI, an installer script, a devtools overlay, or any shipped code — the same places a client key already lives.  Three gates decide whether a ticket is filed, and nothing else the caller sends can widen them:  1. the key is a `client` key carrying the `tickets:public_create` scope, 2. the key's project has public ticket creation enabled, and 3. the item is filed as `pending_approval` — parked out of the work queue until a human promotes it in the dashboard.  The project is the key's own project; there is no `X-Project-Id` to pass and no way to file into someone else's queue. Repeat submissions of the same title dedupe against the open ticket already tracking it, which returns `200` with `deduped: true` instead of filing again.  Send a `dedupKey` to own that grain yourself — the same key from a monitor, a job, or a retried install re-triggers its open ticket: the ticket's fields are refreshed from the new payload and a \"re-triggered\" comment is appended (`200` with `deduped: true, updated: true`), so one recurring failure stays one ticket with its history intact.  This endpoint is served by the Shipeasy **edge worker** (`api.shipeasy.ai`), not the admin API — see `servers` below.  **Use case:** `shipeasy setup` fails on a customer's machine and self-reports the failure with the user's consent — `{ \"title\": \"Setup failed at Feature installs\", \"stepsToReproduce\": \"…\", \"actualResult\": \"…\" }`.
     # @param create_public_bug_request [CreatePublicBugRequest] 
@@ -155,6 +307,246 @@ module Shipeasy::Admin::Generated
       return data, status_code, headers
     end
 
+    # Delete a queue item
+    # Permanently delete a queue item — any type — along with its comment thread, attachments, tags, and investigation records. A human (dashboard) action: the route is never allow-listed for restricted ops keys. Irreversible; to take an item out of the queue without destroying it, set its status (`wont_fix`/`resolved`) instead.  **Use case:** Remove a junk or duplicate report for good.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [DeleteOpsItemResponse]
+    def delete_ops_item(handle, opts = {})
+      data, _status_code, _headers = delete_ops_item_with_http_info(handle, opts)
+      data
+    end
+
+    # Delete a queue item
+    # Permanently delete a queue item — any type — along with its comment thread, attachments, tags, and investigation records. A human (dashboard) action: the route is never allow-listed for restricted ops keys. Irreversible; to take an item out of the queue without destroying it, set its status (&#x60;wont_fix&#x60;/&#x60;resolved&#x60;) instead.  **Use case:** Remove a junk or duplicate report for good.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [Array<(DeleteOpsItemResponse, Integer, Hash)>] DeleteOpsItemResponse data, response status code and response headers
+    def delete_ops_item_with_http_info(handle, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.delete_ops_item ...'
+      end
+      # verify the required parameter 'handle' is set
+      if @api_client.config.client_side_validation && handle.nil?
+        fail ArgumentError, "Missing the required parameter 'handle' when calling OpsApi.delete_ops_item"
+      end
+      if @api_client.config.client_side_validation && handle.to_s.length > 128
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.delete_ops_item, the character length must be smaller than or equal to 128.'
+      end
+
+      if @api_client.config.client_side_validation && handle.to_s.length < 1
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.delete_ops_item, the character length must be greater than or equal to 1.'
+      end
+
+      # resource path
+      local_var_path = '/api/admin/ops/{handle}'.sub('{handle}', CGI.escape(handle.to_s))
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body]
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'DeleteOpsItemResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.delete_ops_item",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:DELETE, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#delete_ops_item\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Get one queue item
+    # Fetch a single queue item by its per-project `number` or full id.  An item linked to others (blocked by / blocking / duplicate of) carries its `group`: every connected item, and the `master` agent runs work through. Pass `include=linked` to inline the other members' content as `linkedItems`, so one call reads the whole group.  A public bug or feature request filed with the reporter's SDK identity carries `context.reporter`: who filed it (their user attributes) and the feature flags, kill switches and experiment groups they had on when they filed it. Read it before you investigate. A bug that only some users hit is often caused by one of those. Reproduce with the same state (a flag whitelist or an experiment override) before you rule them out. It is a snapshot from filing time, so check the entity's current state too.  **Use cases**  - **Inspect one item** before updating its status or linking a PR. - **Pick up linked work** — `include=linked` reads the master and everything tied to it before a run starts. - **Debug a public report** against the reporter's own feature state in `context.reporter`.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @option opts [String] :include &#x60;linked&#x60; inlines the content of every other member of the item&#39;s link group as &#x60;linkedItems&#x60;.
+    # @return [GetOpsItemResponse]
+    def get_ops_item(handle, opts = {})
+      data, _status_code, _headers = get_ops_item_with_http_info(handle, opts)
+      data
+    end
+
+    # Get one queue item
+    # Fetch a single queue item by its per-project &#x60;number&#x60; or full id.  An item linked to others (blocked by / blocking / duplicate of) carries its &#x60;group&#x60;: every connected item, and the &#x60;master&#x60; agent runs work through. Pass &#x60;include&#x3D;linked&#x60; to inline the other members&#39; content as &#x60;linkedItems&#x60;, so one call reads the whole group.  A public bug or feature request filed with the reporter&#39;s SDK identity carries &#x60;context.reporter&#x60;: who filed it (their user attributes) and the feature flags, kill switches and experiment groups they had on when they filed it. Read it before you investigate. A bug that only some users hit is often caused by one of those. Reproduce with the same state (a flag whitelist or an experiment override) before you rule them out. It is a snapshot from filing time, so check the entity&#39;s current state too.  **Use cases**  - **Inspect one item** before updating its status or linking a PR. - **Pick up linked work** — &#x60;include&#x3D;linked&#x60; reads the master and everything tied to it before a run starts. - **Debug a public report** against the reporter&#39;s own feature state in &#x60;context.reporter&#x60;.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @option opts [String] :include &#x60;linked&#x60; inlines the content of every other member of the item&#39;s link group as &#x60;linkedItems&#x60;.
+    # @return [Array<(GetOpsItemResponse, Integer, Hash)>] GetOpsItemResponse data, response status code and response headers
+    def get_ops_item_with_http_info(handle, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.get_ops_item ...'
+      end
+      # verify the required parameter 'handle' is set
+      if @api_client.config.client_side_validation && handle.nil?
+        fail ArgumentError, "Missing the required parameter 'handle' when calling OpsApi.get_ops_item"
+      end
+      if @api_client.config.client_side_validation && handle.to_s.length > 128
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.get_ops_item, the character length must be smaller than or equal to 128.'
+      end
+
+      if @api_client.config.client_side_validation && handle.to_s.length < 1
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.get_ops_item, the character length must be greater than or equal to 1.'
+      end
+
+      allowable_values = ["linked"]
+      if @api_client.config.client_side_validation && opts[:'include'] && !allowable_values.include?(opts[:'include'])
+        fail ArgumentError, "invalid value for \"include\", must be one of #{allowable_values}"
+      end
+      # resource path
+      local_var_path = '/api/admin/ops/{handle}'.sub('{handle}', CGI.escape(handle.to_s))
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+      query_params[:'include'] = opts[:'include'] if !opts[:'include'].nil?
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body]
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'GetOpsItemResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.get_ops_item",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:GET, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#get_ops_item\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Link a fixing PR
+    # Record a pull request that fixes a queue item. An item can carry several PRs: each call ADDS one (re-linking a linked PR is a no-op), `unlink: true` removes one, and `prNumber: null` clears them all. `connectorData.github.prs` lists them; `github.pr` is the primary one (newest open, else newest merged).  **Use case:** Tie the fixing PR to the item so closing the PR can flip it to ready_for_qa.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param link_pr_to_ops_item_request [LinkPrToOpsItemRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [LinkPrToOpsItemResponse]
+    def link_pr_to_ops_item(handle, link_pr_to_ops_item_request, opts = {})
+      data, _status_code, _headers = link_pr_to_ops_item_with_http_info(handle, link_pr_to_ops_item_request, opts)
+      data
+    end
+
+    # Link a fixing PR
+    # Record a pull request that fixes a queue item. An item can carry several PRs: each call ADDS one (re-linking a linked PR is a no-op), &#x60;unlink: true&#x60; removes one, and &#x60;prNumber: null&#x60; clears them all. &#x60;connectorData.github.prs&#x60; lists them; &#x60;github.pr&#x60; is the primary one (newest open, else newest merged).  **Use case:** Tie the fixing PR to the item so closing the PR can flip it to ready_for_qa.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param link_pr_to_ops_item_request [LinkPrToOpsItemRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [Array<(LinkPrToOpsItemResponse, Integer, Hash)>] LinkPrToOpsItemResponse data, response status code and response headers
+    def link_pr_to_ops_item_with_http_info(handle, link_pr_to_ops_item_request, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.link_pr_to_ops_item ...'
+      end
+      # verify the required parameter 'handle' is set
+      if @api_client.config.client_side_validation && handle.nil?
+        fail ArgumentError, "Missing the required parameter 'handle' when calling OpsApi.link_pr_to_ops_item"
+      end
+      if @api_client.config.client_side_validation && handle.to_s.length > 128
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.link_pr_to_ops_item, the character length must be smaller than or equal to 128.'
+      end
+
+      if @api_client.config.client_side_validation && handle.to_s.length < 1
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.link_pr_to_ops_item, the character length must be greater than or equal to 1.'
+      end
+
+      # verify the required parameter 'link_pr_to_ops_item_request' is set
+      if @api_client.config.client_side_validation && link_pr_to_ops_item_request.nil?
+        fail ArgumentError, "Missing the required parameter 'link_pr_to_ops_item_request' when calling OpsApi.link_pr_to_ops_item"
+      end
+      # resource path
+      local_var_path = '/api/admin/ops/{handle}/link-pr'.sub('{handle}', CGI.escape(handle.to_s))
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      # HTTP header 'Content-Type'
+      content_type = @api_client.select_header_content_type(['application/json'])
+      if !content_type.nil?
+          header_params['Content-Type'] = content_type
+      end
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(link_pr_to_ops_item_request)
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'LinkPrToOpsItemResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.link_pr_to_ops_item",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:POST, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#link_pr_to_ops_item\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
     # List the operational queue
     # Returns the unified ops queue (bugs, feature requests, errors, alerts, measurement plans) in work order — highest priority first, oldest first within a priority — so consumers work it top-down. Every filter is applied in SQL before paging, and filters combine with AND. Human-gated holding states (items awaiting human sign-off in the dashboard) are never returned by `all`/default status.  **Filters:** `type` (one item type), `status` (one lifecycle status, or `unresolved` — everything not yet `resolved`/`wont_fix`), `priority` (one triage priority), `owner` (one person or agent), `reporter` (one filer's email), `closedSince` (drop items closed before a time), and `scope=ready` — the items ready to be picked up right now: `open`, with nobody working them (no open run), and either unowned or reopened (sent back to `open` after an earlier run finished).  **Paging:** `limit` is the page size and `offset` the number of items to skip. The order is stable, so walk the queue with `offset += limit`; a page shorter than `limit` is the last one.  **Use case:** Pull the open queue to triage — e.g. every `bug` still `open` — before working items down one by one.
     # @param [Hash] opts the optional parameters
@@ -277,6 +669,332 @@ module Shipeasy::Admin::Generated
       data, status_code, headers = @api_client.call_api(:GET, local_var_path, new_options)
       if @api_client.config.debugging
         @api_client.config.logger.debug "API called: OpsApi#list_ops_items\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Raise an attention notification
+    # Raise a 'needs your attention' bell notification. Create-only and idempotent on `dedupeKey` — re-raising with the same key updates the one card instead of stacking duplicates. It never reads, marks read, or deletes the feed, so it is safe for restricted ops keys.  **Use case:** Escalate work that can't land in code (a product decision, a credential only a human has, a resource only a human may edit), deduped so repeats don't spam the bell.
+    # @param notify_ops_request [NotifyOpsRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [NotifyOpsResponse]
+    def notify_ops(notify_ops_request, opts = {})
+      data, _status_code, _headers = notify_ops_with_http_info(notify_ops_request, opts)
+      data
+    end
+
+    # Raise an attention notification
+    # Raise a &#39;needs your attention&#39; bell notification. Create-only and idempotent on &#x60;dedupeKey&#x60; — re-raising with the same key updates the one card instead of stacking duplicates. It never reads, marks read, or deletes the feed, so it is safe for restricted ops keys.  **Use case:** Escalate work that can&#39;t land in code (a product decision, a credential only a human has, a resource only a human may edit), deduped so repeats don&#39;t spam the bell.
+    # @param notify_ops_request [NotifyOpsRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [Array<(NotifyOpsResponse, Integer, Hash)>] NotifyOpsResponse data, response status code and response headers
+    def notify_ops_with_http_info(notify_ops_request, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.notify_ops ...'
+      end
+      # verify the required parameter 'notify_ops_request' is set
+      if @api_client.config.client_side_validation && notify_ops_request.nil?
+        fail ArgumentError, "Missing the required parameter 'notify_ops_request' when calling OpsApi.notify_ops"
+      end
+      # resource path
+      local_var_path = '/api/admin/notifications'
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      # HTTP header 'Content-Type'
+      content_type = @api_client.select_header_content_type(['application/json'])
+      if !content_type.nil?
+          header_params['Content-Type'] = content_type
+      end
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(notify_ops_request)
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'NotifyOpsResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.notify_ops",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:POST, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#notify_ops\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Update a linked group
+    # Applies `status` and/or `priority` to every item in this item's link group — the items tied to it, directly or through a chain, by blocked-by / blocking / duplicate-of links (see `group` on `ops get`). Each member goes through the normal item update, so activity, audit, run close-out and the error sync happen exactly as for a one-item edit. Members already in the requested state are left alone. An item with no links is a group of one.  **Use cases**  - **The fix landed for the whole group** — `{ \"status\": \"resolved\" }` on any member. - **Drop the group** — `{ \"status\": \"wont_fix\" }`. - **Escalate it together** — `{ \"priority\": \"critical\" }`.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id — any member of the group.
+    # @param update_ops_group_request [UpdateOpsGroupRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [OpsItemGroupResponse]
+    def update_ops_group(handle, update_ops_group_request, opts = {})
+      data, _status_code, _headers = update_ops_group_with_http_info(handle, update_ops_group_request, opts)
+      data
+    end
+
+    # Update a linked group
+    # Applies &#x60;status&#x60; and/or &#x60;priority&#x60; to every item in this item&#39;s link group — the items tied to it, directly or through a chain, by blocked-by / blocking / duplicate-of links (see &#x60;group&#x60; on &#x60;ops get&#x60;). Each member goes through the normal item update, so activity, audit, run close-out and the error sync happen exactly as for a one-item edit. Members already in the requested state are left alone. An item with no links is a group of one.  **Use cases**  - **The fix landed for the whole group** — &#x60;{ \&quot;status\&quot;: \&quot;resolved\&quot; }&#x60; on any member. - **Drop the group** — &#x60;{ \&quot;status\&quot;: \&quot;wont_fix\&quot; }&#x60;. - **Escalate it together** — &#x60;{ \&quot;priority\&quot;: \&quot;critical\&quot; }&#x60;.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id — any member of the group.
+    # @param update_ops_group_request [UpdateOpsGroupRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [Array<(OpsItemGroupResponse, Integer, Hash)>] OpsItemGroupResponse data, response status code and response headers
+    def update_ops_group_with_http_info(handle, update_ops_group_request, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.update_ops_group ...'
+      end
+      # verify the required parameter 'handle' is set
+      if @api_client.config.client_side_validation && handle.nil?
+        fail ArgumentError, "Missing the required parameter 'handle' when calling OpsApi.update_ops_group"
+      end
+      if @api_client.config.client_side_validation && handle.to_s.length > 128
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.update_ops_group, the character length must be smaller than or equal to 128.'
+      end
+
+      if @api_client.config.client_side_validation && handle.to_s.length < 1
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.update_ops_group, the character length must be greater than or equal to 1.'
+      end
+
+      # verify the required parameter 'update_ops_group_request' is set
+      if @api_client.config.client_side_validation && update_ops_group_request.nil?
+        fail ArgumentError, "Missing the required parameter 'update_ops_group_request' when calling OpsApi.update_ops_group"
+      end
+      # resource path
+      local_var_path = '/api/admin/ops/{handle}/group'.sub('{handle}', CGI.escape(handle.to_s))
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      # HTTP header 'Content-Type'
+      content_type = @api_client.select_header_content_type(['application/json'])
+      if !content_type.nil?
+          header_params['Content-Type'] = content_type
+      end
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(update_ops_group_request)
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'OpsItemGroupResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.update_ops_group",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:PATCH, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#update_ops_group\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Update a queue item
+    # Update a queue item. The body is validated against the item's stored type: a `bug` accepts its content fields (title, steps-to-reproduce, actual/expected result) plus `status`/`priority`/`notify` and a GitHub PR link; a `feature_request` its content (title, description, use-case) plus the same triage fields; `error`/`alert`/`measure_plan` accept `status`/`priority`/`notify` only (their content is platform-owned). Pass at least one field.  Completing an `error` ticket (status `resolved` or `ready_for_qa`) also resolves the tracked error it links to; the error reopens automatically if it recurs — so completing is safe pre-deploy.  **Use cases**  - **Start working an item** — `{ \"status\": \"in_progress\" }`. - **Hand off for review** — `{ \"status\": \"ready_for_qa\" }` once the fix landed (the mode PR-based loops use). - **Triage** — `{ \"priority\": \"high\" }`, content edits on bug/feature items.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param update_ops_item_request [UpdateOpsItemRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [UpdateOpsItemResponse]
+    def update_ops_item(handle, update_ops_item_request, opts = {})
+      data, _status_code, _headers = update_ops_item_with_http_info(handle, update_ops_item_request, opts)
+      data
+    end
+
+    # Update a queue item
+    # Update a queue item. The body is validated against the item&#39;s stored type: a &#x60;bug&#x60; accepts its content fields (title, steps-to-reproduce, actual/expected result) plus &#x60;status&#x60;/&#x60;priority&#x60;/&#x60;notify&#x60; and a GitHub PR link; a &#x60;feature_request&#x60; its content (title, description, use-case) plus the same triage fields; &#x60;error&#x60;/&#x60;alert&#x60;/&#x60;measure_plan&#x60; accept &#x60;status&#x60;/&#x60;priority&#x60;/&#x60;notify&#x60; only (their content is platform-owned). Pass at least one field.  Completing an &#x60;error&#x60; ticket (status &#x60;resolved&#x60; or &#x60;ready_for_qa&#x60;) also resolves the tracked error it links to; the error reopens automatically if it recurs — so completing is safe pre-deploy.  **Use cases**  - **Start working an item** — &#x60;{ \&quot;status\&quot;: \&quot;in_progress\&quot; }&#x60;. - **Hand off for review** — &#x60;{ \&quot;status\&quot;: \&quot;ready_for_qa\&quot; }&#x60; once the fix landed (the mode PR-based loops use). - **Triage** — &#x60;{ \&quot;priority\&quot;: \&quot;high\&quot; }&#x60;, content edits on bug/feature items.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param update_ops_item_request [UpdateOpsItemRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [Array<(UpdateOpsItemResponse, Integer, Hash)>] UpdateOpsItemResponse data, response status code and response headers
+    def update_ops_item_with_http_info(handle, update_ops_item_request, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.update_ops_item ...'
+      end
+      # verify the required parameter 'handle' is set
+      if @api_client.config.client_side_validation && handle.nil?
+        fail ArgumentError, "Missing the required parameter 'handle' when calling OpsApi.update_ops_item"
+      end
+      if @api_client.config.client_side_validation && handle.to_s.length > 128
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.update_ops_item, the character length must be smaller than or equal to 128.'
+      end
+
+      if @api_client.config.client_side_validation && handle.to_s.length < 1
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.update_ops_item, the character length must be greater than or equal to 1.'
+      end
+
+      # verify the required parameter 'update_ops_item_request' is set
+      if @api_client.config.client_side_validation && update_ops_item_request.nil?
+        fail ArgumentError, "Missing the required parameter 'update_ops_item_request' when calling OpsApi.update_ops_item"
+      end
+      # resource path
+      local_var_path = '/api/admin/ops/{handle}'.sub('{handle}', CGI.escape(handle.to_s))
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      # HTTP header 'Content-Type'
+      content_type = @api_client.select_header_content_type(['application/json'])
+      if !content_type.nil?
+          header_params['Content-Type'] = content_type
+      end
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(update_ops_item_request)
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'UpdateOpsItemResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.update_ops_item",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:PATCH, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#update_ops_item\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
+      end
+      return data, status_code, headers
+    end
+
+    # Link related items
+    # Edits how this queue item relates to others: which items block it (\"blocked by\"), which items it blocks (\"blocking\"), and which item it duplicates (\"duplicate of\"). The blocker lists are incremental — already-linked or never-linked items are no-ops and every other relation is left as is; `duplicateOf` sets or (with `null`) clears the one canonical item. An item with a blocker that is not `resolved`/`wont_fix` sits in the dashboard's Blocked lane. The relations show on `ops get` as `blockedBy` / `blocking` / `duplicateOf` / `duplicates`.  A link that would make an item block or duplicate itself — directly or through a chain — is rejected with `409`; an item from another project doesn't resolve (`404`). Marking an item a duplicate of a still-open item closes it as `wont_fix`; if the canonical is already `resolved`/`wont_fix` (or the item itself is already closed) its status is left alone.  **Use cases**  - **This item can't move until #12 lands** — `{ \"addBlockedBy\": [\"12\"] }`. - **Split work: this item gates #20 and #21** — `{ \"addBlocking\": [\"20\", \"21\"] }`. - **The dependency turned out not to be one** — `{ \"removeBlockedBy\": [\"12\"] }`. - **Same bug was filed twice** — `{ \"duplicateOf\": \"8\" }` on the newer item — it closes as `wont_fix` while #8 is open.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param update_ops_links_request [UpdateOpsLinksRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [OpsItemLinksResponse]
+    def update_ops_links(handle, update_ops_links_request, opts = {})
+      data, _status_code, _headers = update_ops_links_with_http_info(handle, update_ops_links_request, opts)
+      data
+    end
+
+    # Link related items
+    # Edits how this queue item relates to others: which items block it (\&quot;blocked by\&quot;), which items it blocks (\&quot;blocking\&quot;), and which item it duplicates (\&quot;duplicate of\&quot;). The blocker lists are incremental — already-linked or never-linked items are no-ops and every other relation is left as is; &#x60;duplicateOf&#x60; sets or (with &#x60;null&#x60;) clears the one canonical item. An item with a blocker that is not &#x60;resolved&#x60;/&#x60;wont_fix&#x60; sits in the dashboard&#39;s Blocked lane. The relations show on &#x60;ops get&#x60; as &#x60;blockedBy&#x60; / &#x60;blocking&#x60; / &#x60;duplicateOf&#x60; / &#x60;duplicates&#x60;.  A link that would make an item block or duplicate itself — directly or through a chain — is rejected with &#x60;409&#x60;; an item from another project doesn&#39;t resolve (&#x60;404&#x60;). Marking an item a duplicate of a still-open item closes it as &#x60;wont_fix&#x60;; if the canonical is already &#x60;resolved&#x60;/&#x60;wont_fix&#x60; (or the item itself is already closed) its status is left alone.  **Use cases**  - **This item can&#39;t move until #12 lands** — &#x60;{ \&quot;addBlockedBy\&quot;: [\&quot;12\&quot;] }&#x60;. - **Split work: this item gates #20 and #21** — &#x60;{ \&quot;addBlocking\&quot;: [\&quot;20\&quot;, \&quot;21\&quot;] }&#x60;. - **The dependency turned out not to be one** — &#x60;{ \&quot;removeBlockedBy\&quot;: [\&quot;12\&quot;] }&#x60;. - **Same bug was filed twice** — &#x60;{ \&quot;duplicateOf\&quot;: \&quot;8\&quot; }&#x60; on the newer item — it closes as &#x60;wont_fix&#x60; while #8 is open.
+    # @param handle [String] Per-project item number (e.g. &#x60;7&#x60;) or the full ops item id.
+    # @param update_ops_links_request [UpdateOpsLinksRequest] 
+    # @param [Hash] opts the optional parameters
+    # @option opts [String] :x_project_id Project the request operates on. Optional — defaults to the project the SDK key belongs to; pass it only to scope a multi-project key (the generated client sets it once from its configuration, so per-call callers never thread it).
+    # @return [Array<(OpsItemLinksResponse, Integer, Hash)>] OpsItemLinksResponse data, response status code and response headers
+    def update_ops_links_with_http_info(handle, update_ops_links_request, opts = {})
+      if @api_client.config.debugging
+        @api_client.config.logger.debug 'Calling API: OpsApi.update_ops_links ...'
+      end
+      # verify the required parameter 'handle' is set
+      if @api_client.config.client_side_validation && handle.nil?
+        fail ArgumentError, "Missing the required parameter 'handle' when calling OpsApi.update_ops_links"
+      end
+      if @api_client.config.client_side_validation && handle.to_s.length > 128
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.update_ops_links, the character length must be smaller than or equal to 128.'
+      end
+
+      if @api_client.config.client_side_validation && handle.to_s.length < 1
+        fail ArgumentError, 'invalid value for "handle" when calling OpsApi.update_ops_links, the character length must be greater than or equal to 1.'
+      end
+
+      # verify the required parameter 'update_ops_links_request' is set
+      if @api_client.config.client_side_validation && update_ops_links_request.nil?
+        fail ArgumentError, "Missing the required parameter 'update_ops_links_request' when calling OpsApi.update_ops_links"
+      end
+      # resource path
+      local_var_path = '/api/admin/ops/{handle}/links'.sub('{handle}', CGI.escape(handle.to_s))
+
+      # query parameters
+      query_params = opts[:query_params] || {}
+
+      # header parameters
+      header_params = opts[:header_params] || {}
+      # HTTP header 'Accept' (if needed)
+      header_params['Accept'] = @api_client.select_header_accept(['application/json']) unless header_params['Accept']
+      # HTTP header 'Content-Type'
+      content_type = @api_client.select_header_content_type(['application/json'])
+      if !content_type.nil?
+          header_params['Content-Type'] = content_type
+      end
+      header_params[:'X-Project-Id'] = opts[:'x_project_id'] if !opts[:'x_project_id'].nil?
+
+      # form parameters
+      form_params = opts[:form_params] || {}
+
+      # http body (model)
+      post_body = opts[:debug_body] || @api_client.object_to_http_body(update_ops_links_request)
+
+      # return_type
+      return_type = opts[:debug_return_type] || 'OpsItemLinksResponse'
+
+      # auth_names
+      auth_names = opts[:debug_auth_names] || ['bearerSdkKey']
+
+      new_options = opts.merge(
+        :operation => :"OpsApi.update_ops_links",
+        :header_params => header_params,
+        :query_params => query_params,
+        :form_params => form_params,
+        :body => post_body,
+        :auth_names => auth_names,
+        :return_type => return_type
+      )
+
+      data, status_code, headers = @api_client.call_api(:PATCH, local_var_path, new_options)
+      if @api_client.config.debugging
+        @api_client.config.logger.debug "API called: OpsApi#update_ops_links\nData: #{data.inspect}\nStatus code: #{status_code}\nHeaders: #{headers}"
       end
       return data, status_code, headers
     end

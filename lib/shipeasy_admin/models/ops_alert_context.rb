@@ -1,7 +1,7 @@
 =begin
-#Shipeasy Admin API (server-SDK surface)
+#Shipeasy Admin API
 
-#The slice of the Shipeasy admin API that the published server SDKs expose as their optional `AdminClient`. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Four capabilities, nothing else:  - **List the ops queue** — read the project's tickets, filtered by type, status, priority, owner, reporter (`reporter`) and close time (`closedSince`). - **File a public ticket** — a bug or a feature request onto the project's ops queue. - **Toggle a kill switch** — flip the switch itself, or one of its named sub-switches, on one environment. - **Manage a flag's whitelist** — read, replace, add to, or remove from the allowlist that admits specific identities ahead of every targeting rule.  Everything else in the admin API is reachable through the Shipeasy CLI and MCP server, which speak the complete contract (`openapi.yaml`).
+#REST API for managing feature gates, experiments, configs, universes, and killswitches in a Shipeasy project. Authenticate with an admin SDK key (`Authorization: Bearer sdk_admin_…`) and scope every request to a project via the `X-Project-Id` header.  Mint admin keys via `POST /api/admin/keys` with `type: \"admin\"`. Keys expire after 90 days; rotate with the `revoke` action.
 
 The version of the OpenAPI document: 2.0.0
 
@@ -16,7 +16,7 @@ require 'time'
 module Shipeasy::Admin::Generated
   # Detail for an `alert` ticket — the fired-alert INSTANCE this ticket is. List rows carry the stored capture subset (`source`, `dedupeKey`, `ruleId`, `detail`, `href`, `observedValue`); the single-item read hydrates the rest, resolving `severity`/`status` off the ticket itself and the rule → metric → event chain at request time.
   class OpsAlertContext < ApiModelBase
-    # What kind of condition opened this alert instance.
+    # What kind of condition opened this alert instance. `gcp_monitoring`, `prometheus_alertmanager`, `grafana_alerting`, `aws_cloudwatch`, `azure_monitor`, `datadog_monitors` and `generic_webhook` are incidents delivered from outside monitoring through the project's inbound alert endpoint for that provider; the ticket's `context.alert.external` carries the incident (policy, condition, upstream severity, console `url`, resource labels, `occurrences`, open incident ids).
     attr_accessor :source
 
     # Stable per-condition key; with `source` forms the ticket's `sourceRef`.
@@ -225,7 +225,7 @@ module Shipeasy::Admin::Generated
     def valid?
       warn '[DEPRECATED] the `valid?` method is obsolete'
       return false if @source.nil?
-      source_validator = EnumAttributeValidator.new('String', ["metric_rule", "killswitch_armed", "experiment_srm", "experiment_peek", "guardrail"])
+      source_validator = EnumAttributeValidator.new('String', ["metric_rule", "killswitch_armed", "experiment_srm", "experiment_peek", "guardrail", "gcp_monitoring", "prometheus_alertmanager", "grafana_alerting", "aws_cloudwatch", "azure_monitor", "datadog_monitors", "generic_webhook"])
       return false unless source_validator.valid?(@source)
       return false if @dedupe_key.nil?
       severity_validator = EnumAttributeValidator.new('String', ["danger", "warn", "info"])
@@ -238,7 +238,7 @@ module Shipeasy::Admin::Generated
     # Custom attribute writer method checking allowed values (enum).
     # @param [Object] source Object to be assigned
     def source=(source)
-      validator = EnumAttributeValidator.new('String', ["metric_rule", "killswitch_armed", "experiment_srm", "experiment_peek", "guardrail"])
+      validator = EnumAttributeValidator.new('String', ["metric_rule", "killswitch_armed", "experiment_srm", "experiment_peek", "guardrail", "gcp_monitoring", "prometheus_alertmanager", "grafana_alerting", "aws_cloudwatch", "azure_monitor", "datadog_monitors", "generic_webhook"])
       unless validator.valid?(source)
         fail ArgumentError, "invalid value for \"source\", must be one of #{validator.allowable_values}."
       end
