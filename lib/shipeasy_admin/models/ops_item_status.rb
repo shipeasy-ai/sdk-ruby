@@ -23,9 +23,10 @@ module Shipeasy::Admin::Generated
     READY_FOR_QA = "ready_for_qa".freeze
     RESOLVED = "resolved".freeze
     WONT_FIX = "wont_fix".freeze
+    BACKLOG = "backlog".freeze
 
     def self.all_vars
-      @all_vars ||= [OPEN, PENDING_APPROVAL, INVESTIGATING_BY_AI, IN_PROGRESS, BLOCKED, READY_FOR_QA, RESOLVED, WONT_FIX].freeze
+      @all_vars ||= [OPEN, PENDING_APPROVAL, INVESTIGATING_BY_AI, IN_PROGRESS, BLOCKED, READY_FOR_QA, RESOLVED, WONT_FIX, BACKLOG].freeze
     end
 
     # Builds the enum from string
