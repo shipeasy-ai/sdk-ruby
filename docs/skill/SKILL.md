@@ -134,6 +134,10 @@ threading it into the rescue, buffer it earlier with
 `Shipeasy.add_extras(order_id: id)` — it merges into every see() report later in
 the same (fiber-local, per-request) scope.
 
+The Rack middleware also reads the browser SDK's `X-SE-Correlation` header, so
+every see() in that request carries `correlation_id` and Shipeasy links the
+browser's error to this server exception — no code needed.
+
 `Shipeasy.see_violation(name)` for non-exception problems;
 `Shipeasy.control_flow_exception(e).because(...)` marks expected control flow
 (reports nothing).

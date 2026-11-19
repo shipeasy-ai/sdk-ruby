@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.5.0 (2026-11-19)
+
+### see() reports carry the browser's request correlation token
+
+`Shipeasy::SDK::RackMiddleware` (auto-mounted by the Railtie) now reads the
+`X-SE-Correlation` header the browser SDK sends on every same-origin request,
+and every `see()` fired while serving that request carries it as
+`correlation_id`. Shipeasy joins on it to record the server exception as the
+cause of the browser error it produced. Before this no Ruby report carried the
+token, so a client error was never linked to the Rails exception behind it.
+Malformed tokens are dropped; the token is cleared with the rest of the
+request context.
+
 ## 4.4.0 (2026-11-08)
 
 ### Public tickets carry the reporter's identity (`user`)

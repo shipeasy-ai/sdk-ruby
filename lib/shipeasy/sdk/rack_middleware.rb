@@ -19,8 +19,14 @@ module Shipeasy
     #
     # The resolved id is also stored in the Rack env under "shipeasy.anon_id"
     # for callers that prefer to read it explicitly.
+    #
+    # It also reads the browser SDK's `X-SE-Correlation` request header into the
+    # request-local see() context, so every `Shipeasy.see` fired while serving
+    # the request carries that `correlation_id` — the token the platform joins
+    # on to link the browser's error to the server exception behind it.
     class RackMiddleware
       ENV_KEY = "shipeasy.anon_id".freeze
+      CORRELATION_HEADER = "HTTP_X_SE_CORRELATION".freeze
 
       def initialize(app)
         @app = app
@@ -30,6 +36,7 @@ module Shipeasy
         id, minted = read_or_mint(env)
         env[ENV_KEY] = id
         AnonId.current = id
+        See::Context.correlation_id = env[CORRELATION_HEADER]
         begin
           status, headers, body = @app.call(env)
         ensure
