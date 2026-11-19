@@ -131,7 +131,8 @@ module Shipeasy
       # that is purely framework/gem code) we fall back to the raw backtrace so
       # an error is never left with an empty stack. We never invent the filtering
       # rules — the callable is supplied by the framework's own cleaner.
-      def build_event(problem, subject, outcome, extras, sdk_version:, env:, backtrace_cleaner: nil)
+      def build_event(problem, subject, outcome, extras, sdk_version:, env:, backtrace_cleaner: nil,
+                      correlation_id: nil)
         stack = nil
 
         if problem.is_a?(Violation)
@@ -165,6 +166,8 @@ module Shipeasy
         clean = sanitize_extras(extras)
         ev["extras"] = clean if clean
         ev["env"] = env if env && !env.to_s.empty?
+        corr = Context.clean_correlation(correlation_id)
+        ev["correlation_id"] = corr if corr
         ev
       end
 
@@ -373,8 +376,31 @@ module Shipeasy
       # private-attribute stripped) at build time, exactly like chained extras.
       module Context
         THREAD_KEY = :shipeasy_see_ambient_extras
+        CORRELATION_KEY = :shipeasy_see_correlation_id
+        # Same shape the collector accepts; anything else is dropped, never sent.
+        CORRELATION_RE = /\A[A-Za-z0-9-]{8,64}\z/.freeze
 
         module_function
+
+        # The browser SDK mints one token per same-origin request and sends it
+        # on `X-SE-Correlation`. Parking it here makes every see() fired while
+        # serving that request carry it as `correlation_id`, which is what lets
+        # the platform link the browser's error to this server exception.
+        # Invalid / blank values clear it. Never raises.
+        def correlation_id=(value)
+          Thread.current[CORRELATION_KEY] = clean_correlation(value)
+        end
+
+        def correlation_id
+          Thread.current[CORRELATION_KEY]
+        end
+
+        def clean_correlation(value)
+          s = value.to_s.strip
+          CORRELATION_RE.match?(s) ? s : nil
+        rescue StandardError
+          nil
+        end
 
         # Merge fields into the current context's buffer (string keys, later
         # wins). Non-hash / empty input is ignored. Never raises.
@@ -398,6 +424,7 @@ module Shipeasy
         # request handled by this thread/fiber.
         def clear
           Thread.current[THREAD_KEY] = nil
+          Thread.current[CORRELATION_KEY] = nil
         end
       end
     end

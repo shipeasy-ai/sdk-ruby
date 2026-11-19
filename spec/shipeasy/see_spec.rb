@@ -332,6 +332,41 @@ RSpec.describe "Shipeasy::SDK see()" do
     end
   end
 
+  describe "request correlation (X-SE-Correlation)" do
+    after { Shipeasy::SDK::See::Context.clear }
+
+    it "stamps correlation_id from the request context on every see()" do
+      client = live_client
+      corr = "3f1c2b8e-6a1d-4c2e-9f0a-1b2c3d4e5f60"
+      Shipeasy::SDK::See::Context.correlation_id = corr
+      bodies = capture_collect(client) do
+        client.see(RuntimeError.new("x")).causes_the("y").to("z")
+      end
+      expect(events(bodies).first["correlation_id"]).to eq(corr)
+    end
+
+    it "omits correlation_id outside a correlated request" do
+      client = live_client
+      bodies = capture_collect(client) do
+        client.see(RuntimeError.new("x")).causes_the("y").to("z")
+      end
+      expect(events(bodies).first).not_to have_key("correlation_id")
+    end
+
+    it "drops a malformed token instead of sending it" do
+      Shipeasy::SDK::See::Context.correlation_id = "bad token; drop table"
+      expect(Shipeasy::SDK::See::Context.correlation_id).to be_nil
+      Shipeasy::SDK::See::Context.correlation_id = "short"
+      expect(Shipeasy::SDK::See::Context.correlation_id).to be_nil
+    end
+
+    it "is cleared with the rest of the request context" do
+      Shipeasy::SDK::See::Context.correlation_id = "abcdef12-3456"
+      Shipeasy::SDK::See::Context.clear
+      expect(Shipeasy::SDK::See::Context.correlation_id).to be_nil
+    end
+  end
+
   describe "ambient per-request extras (Shipeasy.add_extras)" do
     after { Shipeasy::SDK::See::Context.clear }
 

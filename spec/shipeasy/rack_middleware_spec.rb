@@ -83,4 +83,37 @@ RSpec.describe Shipeasy::SDK::RackMiddleware do
     expect(cookies.any? { |c| c.start_with?("session=") }).to be(true)
     expect(cookies.any? { |c| c.start_with?("#{Shipeasy::SDK::AnonId::COOKIE}=") }).to be(true)
   end
+  describe "X-SE-Correlation" do
+    after { Shipeasy::SDK::See::Context.clear }
+
+    it "exposes the request's correlation token to see() during the request" do
+      seen = nil
+      app = lambda do |_env|
+        seen = Shipeasy::SDK::See::Context.correlation_id
+        [200, {}, ["ok"]]
+      end
+      corr = "3f1c2b8e-6a1d-4c2e-9f0a-1b2c3d4e5f60"
+      described_class.new(app).call("HTTP_X_SE_CORRELATION" => corr)
+      expect(seen).to eq(corr)
+      expect(Shipeasy::SDK::See::Context.correlation_id).to be_nil
+    end
+
+    it "clears the token even when the app raises" do
+      app = ->(_env) { raise "boom" }
+      expect do
+        described_class.new(app).call("HTTP_X_SE_CORRELATION" => "3f1c2b8e-6a1d")
+      end.to raise_error("boom")
+      expect(Shipeasy::SDK::See::Context.correlation_id).to be_nil
+    end
+
+    it "leaves no token when the header is absent" do
+      seen = :unset
+      app = lambda do |_env|
+        seen = Shipeasy::SDK::See::Context.correlation_id
+        [200, {}, ["ok"]]
+      end
+      described_class.new(app).call({})
+      expect(seen).to be_nil
+    end
+  end
 end

@@ -690,6 +690,7 @@ module Shipeasy
           sdk_version: Shipeasy::SDK::VERSION,
           env: @env,
           backtrace_cleaner: see_backtrace_cleaner,
+          correlation_id: See::Context.correlation_id,
         )
         return unless @see_limiter.should_send?(ev)
 

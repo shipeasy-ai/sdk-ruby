@@ -74,6 +74,17 @@ Rack middleware clears the buffer at the end of each request (Rails auto-mounts
 it); in a background job or script call `Shipeasy.clear_extras` when a unit of
 work ends.
 
+### Linking a browser error to the server exception behind it
+
+The browser SDK (`@shipeasy/sdk/client`) sends a per-request token on the
+`X-SE-Correlation` header of every same-origin request. The same Rack middleware
+reads it, and every `see()` fired while serving that request carries it as
+`correlation_id`. Shipeasy joins the browser's report and this server report on
+that token and records the server exception as the browser error's cause, so
+the two are triaged as one issue instead of two. Nothing to call — Rails gets it
+from the auto-mounted middleware; Sinatra / bare Rack get it from
+`use Shipeasy::SDK::RackMiddleware`.
+
 ## Violations (non-exception problems)
 
 A `Violation`'s name is a **stable fingerprint** — put variable data in
