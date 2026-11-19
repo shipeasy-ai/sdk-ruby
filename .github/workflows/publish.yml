@@ -1,6 +1,19 @@
 name: Publish
 
+# A version bump merged to main IS the release — same model as the other six
+# SDKs. Every push to main checks lib/shipeasy/sdk/version.rb against
+# RubyGems; when the version is new, this run tests, pushes the gem (which
+# also tags v<version>), then cuts the GitHub release (notes = that version's
+# CHANGELOG section). Pushes that bump nothing exit after the check. A manually
+# created release or a dispatch still runs the same idempotent path.
+#
+# Keep this file named publish.yml: the RubyGems trusted publisher is scoped to
+# it. And keep publishing IN this run — a release created with GITHUB_TOKEN
+# fires no other workflow, so a "cut release here, publish over there" split
+# would never publish.
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
@@ -13,23 +26,53 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # rake release tags v$VERSION and pushes it
+      contents: write # rake release tags v$VERSION and pushes it; gh release create
       id-token: write # for trusted publishing to RubyGems
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ruby/setup-ruby@v1
+      - name: Is this version on RubyGems?
+        id: need
+        run: |
+          VERSION=$(ruby -e 'load "lib/shipeasy/sdk/version.rb"; print Shipeasy::SDK::VERSION')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if curl -sf "https://rubygems.org/api/v2/rubygems/shipeasy-sdk/versions/$VERSION.json" >/dev/null; then
+            echo "on RubyGems: shipeasy-sdk $VERSION"
+            echo "publish=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "NEW: shipeasy-sdk $VERSION"
+            echo "publish=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.need.outputs.publish == '1'
+        uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
           bundler-cache: true
 
-      - run: bundle exec rspec
+      - if: steps.need.outputs.publish == '1'
+        run: bundle exec rspec
 
-      - name: Build gem
+      - if: steps.need.outputs.publish == '1'
+        name: Build gem
         run: gem build shipeasy-sdk.gemspec
 
       # Trusted publishing: configure on rubygems.org under
       # "Trusted publishers" → GitHub Actions, scoped to this repo +
       # this workflow file. No long-lived RUBYGEMS_API_KEY needed.
-      - name: Publish to RubyGems
+      - if: steps.need.outputs.publish == '1'
+        name: Publish to RubyGems
         uses: rubygems/release-gem@v1
+
+      - name: Cut the v${{ steps.need.outputs.version }} release
+        if: steps.need.outputs.publish == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.need.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists"; exit 0
+          fi
+          awk -v h="## $VERSION" 'index($0, h) == 1 && (length($0) == length(h) || substr($0, length(h) + 1, 1) == " ") {f=1; next} /^## / {if (f) exit} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          [ -s "$RUNNER_TEMP/notes.md" ] || echo "See CHANGELOG.md" > "$RUNNER_TEMP/notes.md"
+          gh release create "v$VERSION" --verify-tag --title "v$VERSION" --notes-file "$RUNNER_TEMP/notes.md"

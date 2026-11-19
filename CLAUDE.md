@@ -62,10 +62,12 @@ symbol you touched.
 
 - Bump the version in `lib/shipeasy/sdk/version.rb` (it is reported on every
   `see()` event) and add a `CHANGELOG.md` entry.
-- Publishing is **release-gated**: a GitHub release on `shipeasy-ai/sdk-ruby`
-  fires `.github/workflows/publish.yml` (RubyGems Trusted Publishing). A
-  version-bumped push to `main` is **not** the release — cut a release. Never
-  `gem push` locally.
+- **A version bump pushed to `main` IS the release.** `.github/workflows/publish.yml`
+  runs on every push to `main`; when `version.rb` holds a version RubyGems does
+  not have, it tests, pushes the gem (RubyGems Trusted Publishing, which also
+  tags `v<version>`), then cuts the GitHub release from the CHANGELOG section.
+  So bump the version only in the commit you mean to ship. Never `gem push`
+  locally.
 
 ## Checks before you commit
 
