@@ -49,9 +49,11 @@ Gem::Specification.new do |spec|
   # Exercise the Rails generator (`rails generate shipeasy:install`) under test.
   # railties (not full Rails) is all the generator needs — the spec drives the
   # generator directly against a throwaway destination, so we avoid the fragile
-  # ammeter / rspec-rails ↔ actionview version coupling. `~> 7.1` keeps Ruby 3.0
-  # green (bundler resolves 7.1.x there; newer Rubies pick 7.2.x) — both fine.
-  spec.add_development_dependency "railties", "~> 8.1"
+  # ammeter / rspec-rails ↔ actionview version coupling. A RANGE, not `~> 8.x`:
+  # railties 8 needs Ruby >= 3.2, and this gem supports >= 3.0 — bundler resolves
+  # 7.x on Ruby 3.0/3.1 and 8.x on newer Rubies, so every CI leg can install.
+  # (A dependabot bump to `~> 8.1` left the 3.0/3.1 legs red for weeks.)
+  spec.add_development_dependency "railties", ">= 7.1", "< 9"
   # Optional integration: `Shipeasy::OpenFeature::Provider` adapts FlagsClient to
   # the CNCF OpenFeature API. NOT a runtime dependency — the provider file
   # (lib/shipeasy/sdk/openfeature.rb) requires "open_feature/sdk" lazily, so apps

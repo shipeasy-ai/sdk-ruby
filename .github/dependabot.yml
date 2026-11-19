@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # Widen ranges, never replace them: the gemspec's dev-dep ranges span
+    # versions on purpose so the oldest supported Ruby can still resolve
+    # (see the railties comment in shipeasy-sdk.gemspec).
+    versioning-strategy: widen
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
