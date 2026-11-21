@@ -167,7 +167,8 @@ from `configure`; pass one only to override it for that tag.
   user's overrides apply to `Client` reads (programmatic override > cookie >
   normal). Outside Rack: `Shipeasy.with_request_overrides(cookie_header) { ... }`.
   Fail closed (needs the override key Shipeasy serves, a valid unexpired
-  signature); unsigned `?se_gate_` URL params stay client-only.
+  signature); unsigned `?se_gate_` URL params stay client-only unless you opt in to
+  the dev-only `se_ov_dev` cookie with `c.dev_overrides = true` (ignored in production).
 - `c.private_attributes = ["email"]` strips keys from outbound events.
 - `c.clean_backtrace` (default on) filters `see()` stacks to app frames via `Rails.backtrace_cleaner`; set `false` for raw backtraces.
 - `c.sticky_store = Shipeasy::SDK::InMemoryStickyStore.new` pins experiment assignment.

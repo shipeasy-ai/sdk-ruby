@@ -37,7 +37,7 @@ module Shipeasy
       # /sdk/i18n/loader.js) — distinct from the edge API the blobs are fetched from.
       DEFAULT_CDN_BASE = "https://cdn.shipeasy.ai"
 
-      def initialize(api_key:, base_url: nil, env: "prod", is_network_enabled: nil, disable_telemetry: nil, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil, disable_internal_error_reporting: false, clean_backtrace: true)
+      def initialize(api_key:, base_url: nil, env: "prod", is_network_enabled: nil, disable_telemetry: nil, telemetry_url: nil, test_mode: false, private_attributes: nil, sticky_store: nil, log_level: nil, disable_internal_error_reporting: false, clean_backtrace: true, dev_overrides: false)
         # SDK-wide diagnostic verbosity. Set the leveled logger from the passed
         # level (default :warn; unknown falls back to :warn). The logger is
         # module-scoped, so the last-built engine wins — mirrors the TS SDK,
@@ -75,6 +75,8 @@ module Shipeasy
         # RAILS_ENV / RACK_ENV / APP_ENV), then falls back to the configured `env`
         # tag. See sdk/env.rb.
         prod = Shipeasy::SDK::Env.is_production_env(env)
+        @production = prod
+        self.dev_overrides = dev_overrides
         # Master network gate. test_mode always forces the SDK fully offline;
         # otherwise honour an explicit is_network_enabled, else default to
         # prod-on. When @offline, every fetch / track / exposure / see() / poll /
@@ -229,15 +231,41 @@ module Shipeasy
       # (fail closed), no cookie, or any verification failure. Called once per
       # request at scope entry, never per read.
       def verify_request_overrides(cookie_header)
+        signed = nil
         raw = Shipeasy::SDK::OverrideCookie.extract(cookie_header)
-        return nil if raw.nil?
+        if raw
+          blob = @mutex.synchronize { @flags_blob }
+          if blob.is_a?(Hash)
+            signed = Shipeasy::SDK::OverrideCookie.verify(raw, blob["overrideKey"], blob["overrideKeyId"])
+          end
+        end
 
-        blob = @mutex.synchronize { @flags_blob }
-        return nil unless blob.is_a?(Hash)
+        dev = nil
+        if dev_overrides_active?
+          dev_raw = Shipeasy::SDK::OverrideCookie.extract(cookie_header, Shipeasy::SDK::OverrideCookie::DEV_COOKIE_NAME)
+          dev = Shipeasy::SDK::OverrideCookie.decode_dev(dev_raw) if dev_raw
+        end
 
-        Shipeasy::SDK::OverrideCookie.verify(raw, blob["overrideKey"], blob["overrideKeyId"])
+        Shipeasy::SDK::OverrideCookie.merge(dev, signed)
       rescue StandardError
         nil
+      end
+
+      # Opt-in `dev_overrides` (default false): also honour the UNSIGNED
+      # `se_ov_dev` cookie the browser SDK writes from `?se_gate_x=true` URL
+      # params. Honoured only on a non-production process (test mode counts as
+      # non-production); on in production it is ignored with ONE warning.
+      def dev_overrides=(value)
+        @dev_overrides = value ? true : false
+        if @dev_overrides && @production && !@test_mode && !@dev_overrides_warned
+          @dev_overrides_warned = true
+          Shipeasy::Logging.warn "[shipeasy] dev_overrides is enabled in a production process — ignored"
+        end
+        value
+      end
+
+      def dev_overrides_active?
+        @dev_overrides && (@test_mode || !@production) ? true : false
       end
 
       # Register a listener fired after a background poll fetches NEW flag/config

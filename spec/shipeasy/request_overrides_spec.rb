@@ -222,6 +222,102 @@ RSpec.describe "request-scoped signed overrides" do
     end
   end
 
+  describe "unsigned se_ov_dev cookie (dev_overrides)" do
+    DEV_COOKIE = "eyJnYXRlcyI6eyJsb2JieV9ob2xkIjp0cnVlLCJvbGRfbmF2IjpmYWxzZX0sImNvbmZpZ3MiOnsiYmFubmVyIjp7InRleHQiOiJoaSJ9fSwiZXhwcyI6eyJjaGVja291dF9leHAiOiJ0cmVhdG1lbnQifX0".freeze
+    let(:dev_header) { "a=1; se_ov_dev=#{DEV_COOKIE}" }
+
+    it "decodes the cross-impl vector, bare or in a (URL-encoded) Cookie header" do
+      ov = verifier.decode_dev(DEV_COOKIE)
+      expect(ov["gates"]).to eq("lobby_hold" => true, "old_nav" => false)
+      expect(ov["configs"]).to eq("banner" => { "text" => "hi" })
+      expect(ov["exps"]).to eq("checkout_exp" => "treatment")
+      expect(verifier.extract(dev_header, "se_ov_dev")).to eq(DEV_COOKIE)
+      expect(verifier.extract(DEV_COOKIE, "se_ov_dev")).to eq(DEV_COOKIE)
+      expect(verifier.extract("se_ov_dev=#{DEV_COOKIE.sub("eyJn", "eyJn")}", "se_ov_dev")).to eq(DEV_COOKIE)
+      expect(verifier.decode_dev("!!!")).to be_nil
+      expect(verifier.decode_dev(verifier.b64u_encode("[1]"))).to be_nil
+    end
+
+    def configure_offline(dev)
+      Shipeasy.config.dev_overrides = dev
+      Shipeasy.configure_for_offline(snapshot: { "flags" => flags_blob, "experiments" => exps_blob })
+    end
+
+    it "is ignored when the option is off" do
+      configure_offline(false)
+      Shipeasy.with_request_overrides(dev_header) do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(false)
+      end
+    end
+
+    it "is honored with the option on in a non-production (test-mode) engine" do
+      configure_offline(true)
+      Shipeasy.with_request_overrides(dev_header) do
+        c = Shipeasy::Client.new(user)
+        expect(c.get_flag_detail("lobby_hold").reason).to eq("OVERRIDE")
+        expect(c.get_flag("lobby_hold")).to be(true)
+        expect(c.get_flag("old_nav")).to be(false)
+        expect(c.get_config("banner")).to eq("text" => "hi")
+        expect(c.universe("checkout").assign.group).to eq("treatment")
+      end
+      expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(false)
+    end
+
+    it "is honored through the Rack middleware" do
+      configure_offline(true)
+      seen = nil
+      app = ->(_e) { seen = Shipeasy::Client.new(user).get_flag("lobby_hold"); [200, {}, []] }
+      Shipeasy::SDK::RackMiddleware.new(app).call("HTTP_COOKIE" => "se_ov_dev=#{DEV_COOKIE}")
+      expect(seen).to be(true)
+    end
+
+    it "is ignored (with one warning) in a production process" do
+      allow(Shipeasy::Logging).to receive(:warn)
+      Shipeasy.configure do |c|
+        c.api_key = "k"
+        c.init = false
+        c.is_network_enabled = false
+        c.dev_overrides = true
+      end
+      expect(Shipeasy.engine.dev_overrides_active?).to be(false)
+      Shipeasy.with_request_overrides(dev_header) do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(false)
+      end
+      expect(Shipeasy::Logging).to have_received(:warn).with(/dev_overrides.*production/).once
+    end
+
+    it "is active on a non-production process with the option" do
+      old = ENV["SHIPEASY_ENV"]
+      ENV["SHIPEASY_ENV"] = "development"
+      Shipeasy.configure do |c|
+        c.api_key = "k"
+        c.init = false
+        c.dev_overrides = true
+      end
+      expect(Shipeasy.engine.dev_overrides_active?).to be(true)
+      Shipeasy.override_flag("old_nav", false)
+      Shipeasy.with_request_overrides(dev_header) do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(true)
+      end
+    ensure
+      ENV["SHIPEASY_ENV"] = old
+    end
+
+    it "lets the signed cookie beat the dev cookie per name, and programmatic beat both" do
+      configure_offline(true)
+      dev = verifier.b64u_encode('{"gates":{"lobby_hold":false,"extra":true}}')
+      Shipeasy.with_request_overrides("se_ov=#{OV_COOKIE}; se_ov_dev=#{dev}") do
+        c = Shipeasy::Client.new(user)
+        expect(c.get_flag("lobby_hold")).to be(true)  # signed true beats dev false
+        expect(c.get_flag_detail("extra").value).to be(true) # dev-only name still applies
+      end
+      Shipeasy.override_flag("lobby_hold", false)
+      Shipeasy.with_request_overrides("se_ov=#{OV_COOKIE}; se_ov_dev=#{DEV_COOKIE}") do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(false)
+      end
+    end
+  end
+
   it "just yields when no engine is configured" do
     expect(Shipeasy.with_request_overrides("se_ov=#{OV_COOKIE}") { :ok }).to eq(:ok)
   end

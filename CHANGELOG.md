@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.7.0 (2026-11-21)
+
+### Dev-only `se_ov_dev` URL override cookie for server reads (shipeasy ops #714)
+
+Opt-in `c.dev_overrides = true` (default false) makes the Rack middleware and
+`Shipeasy.with_request_overrides` also honour the unsigned `se_ov_dev` cookie
+the browser SDK writes from `?se_gate_x=true` style URL params, so URL overrides
+reach server reads on a dev machine without DevTools sign-in. Honoured on
+non-production processes only (`SHIPEASY_ENV`, then `RAILS_ENV` / `RACK_ENV` /
+`APP_ENV`; unset means production; test mode counts as non-production); ignored
+with one warning in production, where the cookie is never read. Precedence:
+programmatic > signed `se_ov` > `se_ov_dev` > evaluation. Additive.
+
 ## 4.6.0 (2026-11-21)
 
 ### Signed DevTools overrides reach server-side reads (shipeasy ops #714)

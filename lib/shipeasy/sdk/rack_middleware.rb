@@ -62,7 +62,7 @@ module Shipeasy
       # cookie is absent (the common case): no engine/crypto work.
       def verified_overrides(env)
         header = env["HTTP_COOKIE"]
-        return nil unless header && header.include?("#{OverrideCookie::COOKIE_NAME}=")
+        return nil unless header && header.include?(OverrideCookie::COOKIE_NAME)
 
         engine = Shipeasy.engine
         engine && engine.verify_request_overrides(header)
