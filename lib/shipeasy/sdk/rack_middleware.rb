@@ -61,11 +61,13 @@ module Shipeasy
       # Verified `se_ov` override map for this request, or nil. Cheap when the
       # cookie is absent (the common case): no engine/crypto work.
       def verified_overrides(env)
-        header = env["HTTP_COOKIE"]
-        return nil unless header && header.include?(OverrideCookie::COOKIE_NAME)
+        cookie  = env["HTTP_COOKIE"]
+        header  = env[OverrideCookie::HEADER_ENV_KEY]
+        name    = OverrideCookie::COOKIE_NAME
+        return nil unless (cookie && cookie.include?(name)) || (header && header.include?(name))
 
         engine = Shipeasy.engine
-        engine && engine.verify_request_overrides(header)
+        engine && engine.verify_request_overrides(cookie, header)
       rescue StandardError
         nil
       end

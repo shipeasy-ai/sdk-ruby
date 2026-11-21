@@ -230,9 +230,14 @@ module Shipeasy
       # Returns the verified override map or nil — nil when no key was served
       # (fail closed), no cookie, or any verification failure. Called once per
       # request at scope entry, never per read.
-      def verify_request_overrides(cookie_header)
+      #
+      # +overrides_header+ is the optional `X-Shipeasy-Overrides` request header
+      # (cookie-header syntax) for APIs the cookie does not reach; per cookie name
+      # the Cookie header wins and the custom header fills in when it is absent.
+      def verify_request_overrides(cookie_header, overrides_header = nil)
         signed = nil
-        raw = Shipeasy::SDK::OverrideCookie.extract(cookie_header)
+        raw = Shipeasy::SDK::OverrideCookie.extract(cookie_header) ||
+              Shipeasy::SDK::OverrideCookie.extract(overrides_header)
         if raw
           blob = @mutex.synchronize { @flags_blob }
           if blob.is_a?(Hash)
@@ -242,7 +247,9 @@ module Shipeasy
 
         dev = nil
         if dev_overrides_active?
-          dev_raw = Shipeasy::SDK::OverrideCookie.extract(cookie_header, Shipeasy::SDK::OverrideCookie::DEV_COOKIE_NAME)
+          dev_name = Shipeasy::SDK::OverrideCookie::DEV_COOKIE_NAME
+          dev_raw = Shipeasy::SDK::OverrideCookie.extract(cookie_header, dev_name) ||
+                    Shipeasy::SDK::OverrideCookie.extract(overrides_header, dev_name)
           dev = Shipeasy::SDK::OverrideCookie.decode_dev(dev_raw) if dev_raw
         end
 

@@ -23,6 +23,10 @@ module Shipeasy
       # Only ever read when the opt-in dev_overrides option is on AND the process
       # is non-production — see Engine#dev_overrides_active?.
       DEV_COOKIE_NAME = "se_ov_dev".freeze
+      # Request header carrying the same cookies (cookie-header syntax) for APIs
+      # on another origin/subdomain. Rack env key: HTTP_X_SHIPEASY_OVERRIDES.
+      HEADER_NAME = "X-Shipeasy-Overrides".freeze
+      HEADER_ENV_KEY = "HTTP_X_SHIPEASY_OVERRIDES".freeze
       FORMAT_VERSION = 1
 
       EMPTY = { "gates" => {}.freeze, "configs" => {}.freeze, "exps" => {}.freeze }.freeze

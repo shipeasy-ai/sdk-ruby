@@ -146,6 +146,29 @@ at the cookie, so it is never active in production. Precedence per name:
 programmatic override, then signed `se_ov`, then `se_ov_dev`, then normal
 evaluation; the reason stays `OVERRIDE`.
 
+### Frontend and API on different subdomains
+
+With the app on `app.example.com` and the API on `api.example.com`, the browser
+SDK and DevTools overlay scope the override cookies to the registrable domain
+(auto-detected, or set `overrideCookieDomain` in the browser `configure()`), so
+the API receives them and the middleware above just works. For token-auth APIs
+or origins the cookie cannot reach, the browser also exposes
+`getOverrideHeaders()` (from `@shipeasy/sdk/client`), which returns
+`{ "X-Shipeasy-Overrides": "<cookie-header syntax>" }`; send it with your
+requests (your API's CORS must allow that header). `RackMiddleware` reads it
+automatically (`HTTP_X_SHIPEASY_OVERRIDES`), with the same verification and
+dev-guards as the cookies; the `Cookie` header wins per cookie name and the
+custom header fills in when the cookie is absent. Outside Rack:
+
+```ruby
+Shipeasy.with_request_overrides(
+  request.headers["Cookie"],
+  overrides_header: request.headers["X-Shipeasy-Overrides"],
+) do
+  Shipeasy::Client.new(current_user).get_flag("new_checkout")
+end
+```
+
 ## Change listeners
 
 `Shipeasy.on_change` registers a callback fired after a background poll fetches

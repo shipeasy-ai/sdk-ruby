@@ -320,9 +320,13 @@ module Shipeasy
     # (no override key served / bad or expired signature => plain evaluation),
     # cleared on exit, returns the block's value. Without a configured engine it
     # just yields.
-    def with_request_overrides(cookie_header)
+    #
+    # +overrides_header+ (optional keyword): the `X-Shipeasy-Overrides` header
+    # value, for APIs on a sibling subdomain / token-auth APIs the cookie does not
+    # reach. The Cookie header wins per cookie name; the header fills in.
+    def with_request_overrides(cookie_header, overrides_header: nil)
       eng = engine
-      map = eng && eng.verify_request_overrides(cookie_header)
+      map = eng && eng.verify_request_overrides(cookie_header, overrides_header)
       Shipeasy::SDK::RequestOverrides.scope(map) { yield }
     end
 
