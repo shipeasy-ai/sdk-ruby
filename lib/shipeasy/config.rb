@@ -305,6 +305,20 @@ module Shipeasy
       nil
     end
 
+    # Scope the signed DevTools overrides from a request's Cookie header (or the
+    # bare `se_ov` value) to the block, so every Shipeasy::Client read inside it
+    # honours them (programmatic override > signed cookie > normal evaluation).
+    # For apps NOT using Shipeasy::SDK::RackMiddleware (jobs, GraphQL executors,
+    # Sinatra without the middleware, ...). Verified once on entry, fail closed
+    # (no override key served / bad or expired signature => plain evaluation),
+    # cleared on exit, returns the block's value. Without a configured engine it
+    # just yields.
+    def with_request_overrides(cookie_header)
+      eng = engine
+      map = eng && eng.verify_request_overrides(cookie_header)
+      Shipeasy::SDK::RequestOverrides.scope(map) { yield }
+    end
+
     # Register a poll listener fired after a background poll fetches NEW data
     # (HTTP 200, not 304). Requires configure(poll: true). Returns an unsubscribe
     # proc. Accepts a block or any callable.

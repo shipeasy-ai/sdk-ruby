@@ -8,6 +8,7 @@ require_relative "sdk/env"
 require_relative "sdk/eval"
 require_relative "sdk/telemetry"
 require_relative "sdk/anon_id"
+require_relative "sdk/override_cookie"
 require_relative "sdk/sticky_store"
 require_relative "sdk/see"
 require_relative "sdk/internal_report"
@@ -221,6 +222,24 @@ module Shipeasy
         self
       end
 
+      # --- Request-scoped signed overrides (DevTools `se_ov` cookie) -------
+      # Verify a Cookie header (or bare se_ov value) against the project verify
+      # key the platform served in /sdk/flags (`overrideKey` / `overrideKeyId`).
+      # Returns the verified override map or nil — nil when no key was served
+      # (fail closed), no cookie, or any verification failure. Called once per
+      # request at scope entry, never per read.
+      def verify_request_overrides(cookie_header)
+        raw = Shipeasy::SDK::OverrideCookie.extract(cookie_header)
+        return nil if raw.nil?
+
+        blob = @mutex.synchronize { @flags_blob }
+        return nil unless blob.is_a?(Hash)
+
+        Shipeasy::SDK::OverrideCookie.verify(raw, blob["overrideKey"], blob["overrideKeyId"])
+      rescue StandardError
+        nil
+      end
+
       # Register a listener fired after a background poll fetches NEW flag/config
       # data (HTTP 200, not 304). Accepts either a block or any callable (an
       # object responding to #call). Returns an unsubscribe proc — call it to
@@ -264,6 +283,12 @@ module Shipeasy
         override = @mutex.synchronize { @flag_overrides[key] if @flag_overrides.key?(key) }
         return FlagDetail.new(value: override, reason: REASON_OVERRIDE) unless override.nil?
 
+        # 1b. Signed request-scoped (DevTools cookie) override: below the
+        #     programmatic override, above normal evaluation. Same short-circuit
+        #     (no telemetry) as the programmatic path.
+        signed = request_override("gates", key)
+        return FlagDetail.new(value: signed, reason: REASON_OVERRIDE) unless signed.nil?
+
         @telemetry.emit("gate", name)
 
         flags_blob, gate = @mutex.synchronize { [@flags_blob, @flags_blob&.dig("gates", name)] }
@@ -301,6 +326,13 @@ module Shipeasy
           key = name.to_s
           has_override, override = @mutex.synchronize do
             [@config_overrides.key?(key), @config_overrides[key]]
+          end
+          unless has_override
+            ov = request_overrides_map
+            if ov && ov["configs"].key?(key)
+              has_override = true
+              override = ov["configs"][key]
+            end
           end
           if has_override
             begin
@@ -408,6 +440,10 @@ module Shipeasy
       # Unknown killswitches return false. Not user-scoped.
       def get_killswitch(name, switch_key = nil)
         safe_run("get_killswitch('#{name}')", false) do
+          if switch_key.nil?
+            signed = request_override("gates", name.to_s)
+            next signed unless signed.nil?
+          end
           @telemetry.emit("ks", name)
           ks = @mutex.synchronize { @flags_blob&.dig("killswitches", name.to_s) }
           next false unless ks
@@ -606,6 +642,22 @@ module Shipeasy
         fallback
       end
 
+      # The verified request-scoped override map (see verify_request_overrides),
+      # or nil outside a request scope.
+      def request_overrides_map
+        Shipeasy::SDK::RequestOverrides.current
+      end
+
+      # One signed override value for +kind+ ("gates" | "configs" | "exps") and
+      # +key+, or nil when none applies.
+      def request_override(kind, key)
+        ov = request_overrides_map
+        return nil unless ov
+
+        sub = ov[kind]
+        sub.is_a?(Hash) ? sub[key] : nil
+      end
+
       # The stable subject for an internal-error report: strip the variable
       # "('resource')" argument off a safe_run label so the fingerprint carries
       # no variable data and identical bugs dedupe into one issue.
@@ -634,6 +686,20 @@ module Shipeasy
             in_experiment: true,
             group: override[:group],
             params: Eval.merge_params(param_defaults, override[:params]),
+          )
+        end
+
+        signed_group = request_override("exps", key)
+        if signed_group
+          universe = exps_blob&.dig("universes", exp && exp["universe"])
+          param_defaults = Eval.param_defaults_from_schema(
+            universe && (universe["param_schema"] || universe[:param_schema])
+          )
+          variant = ((exp && exp["groups"]) || []).find { |g| g["name"] == signed_group }
+          return Eval::ExperimentResult.new(
+            in_experiment: true,
+            group: signed_group,
+            params: Eval.merge_params(param_defaults, variant && variant["params"]),
           )
         end
 
