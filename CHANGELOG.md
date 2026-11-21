@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.6.0 (2026-11-21)
+
+### Signed DevTools overrides reach server-side reads (shipeasy ops #714)
+
+A signed-in DevTools overlay mirrors its overrides (including `?se_gate_x=true`)
+into a signed `se_ov` cookie, but server reads ignored it. `RackMiddleware`
+(auto-mounted by the Railtie) now verifies the cookie once per request against
+the project override key served in `/sdk/flags` and scopes it to the request;
+`Shipeasy::Client` reads then resolve programmatic override > signed cookie >
+normal evaluation (`get_flag`/`get_flag_detail` with reason `OVERRIDE`,
+kill switches, configs, experiment groups). New
+`Shipeasy.with_request_overrides(cookie_header) { ... }` does the same outside
+Rack. Fail closed: no served key, bad/expired signature or key-id mismatch means
+no overrides. Unsigned `?se_gate_` URL params stay client-only. Additive.
+
 ## 4.5.0 (2026-11-19)
 
 ### see() reports carry the browser's request correlation token

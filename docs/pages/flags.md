@@ -38,7 +38,7 @@ detail.reason   # => "RULE_MATCH" / "DEFAULT" / "OFF" / ...
 
 | reason | meaning |
 | --- | --- |
-| `OVERRIDE` | a [`configure_for_testing`](testing.md) / `override_flag` override forced the value |
+| `OVERRIDE` | a [`configure_for_testing`](testing.md) / `override_flag` override, or a signed DevTools override ([advanced](advanced.md)), forced the value |
 | `CLIENT_NOT_READY` | the first fetch hasn't completed yet → `value` false |
 | `FLAG_NOT_FOUND` | no gate by that name in the blob → `value` false |
 | `OFF` | the gate exists but is disabled or killswitched → `value` false |

@@ -84,6 +84,47 @@ For **Sinatra / Hanami / bare Rack** (no Railtie), mount it yourself:
 use Shipeasy::SDK::RackMiddleware
 ```
 
+## DevTools overrides on server reads
+
+When a teammate is signed in to the Shipeasy DevTools overlay, every override
+they set in the browser (including the `?se_gate_<name>=true` URL state) is
+mirrored into a **signed** `se_ov` cookie. Cookies reach the server on every
+same-origin request — page loads and GraphQL/XHR alike — so server-side reads
+can honour them. `Shipeasy::SDK::RackMiddleware` (auto-mounted by the Rails
+Railtie; add `use Shipeasy::SDK::RackMiddleware` for Sinatra / bare Rack)
+verifies the cookie once per request and scopes the result to that request.
+Every `Shipeasy::Client` read inside it then resolves:
+
+1. a programmatic override (`Shipeasy.override_flag` and friends), then
+2. the signed cookie override, then
+3. normal evaluation.
+
+| read | cookie override |
+| --- | --- |
+| `get_flag` / `get_flag_detail` | gate value, reason `OVERRIDE` |
+| `get_killswitch(name)` | the same gate namespace (whole-switch read only; per-key `switch_key` reads are untouched) |
+| `get_config` | replaces the value (your decoder still runs) |
+| `universe(name).assign` | forces that experiment's group (variant params from the blob) |
+
+Outside Rack (a job, a GraphQL executor, a custom server) scope it yourself:
+
+```ruby
+# cookie_header: the raw Cookie header, or the bare se_ov value
+Shipeasy.with_request_overrides(request.headers["Cookie"]) do
+  Shipeasy::Client.new(current_user).get_flag("new_checkout")
+end
+```
+
+It is stored in fiber storage (Ruby 3.2+, inherited by child fibers such as
+`GraphQL::Dataloader`) or fiber-local state on older Rubies, so concurrent
+requests never bleed, and it is cleared when the block / request ends.
+
+**Fail closed.** The cookie is only trusted when Shipeasy served your project's
+override key to the SDK, the HMAC signature verifies, the key id matches, and
+it has not expired; anything else is ignored and reads evaluate normally. A bare
+`?se_gate_` URL parameter with no signed-in DevTools session never reaches the
+server — it stays client-only by design.
+
 ## Change listeners
 
 `Shipeasy.on_change` registers a callback fired after a background poll fetches

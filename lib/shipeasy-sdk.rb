@@ -7,6 +7,7 @@ require_relative "shipeasy/sdk/sticky_store"
 require_relative "shipeasy/engine"
 require_relative "shipeasy/client"
 require_relative "shipeasy/sdk/anon_id"
+require_relative "shipeasy/sdk/override_cookie"
 require_relative "shipeasy/sdk/rack_middleware"
 require_relative "shipeasy/i18n/label_fetcher"
 
