@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.8.0 (2026-11-21)
+
+### Overrides reach APIs on sibling subdomains (shipeasy ops #714)
+
+`RackMiddleware` now also reads the `X-Shipeasy-Overrides` request header
+(cookie-header syntax, sent by the browser SDK's `getOverrideHeaders()`) as a
+fallback for `se_ov` / `se_ov_dev`, for an API on a different subdomain or a
+token-auth API the cookie does not reach. Same verification and dev guards; the
+`Cookie` header wins per cookie name. `Shipeasy.with_request_overrides` takes an
+optional `overrides_header:` keyword. Additive.
+
 ## 4.7.0 (2026-11-21)
 
 ### Dev-only `se_ov_dev` URL override cookie for server reads (shipeasy ops #714)

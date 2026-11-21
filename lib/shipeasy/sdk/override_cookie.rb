@@ -23,6 +23,10 @@ module Shipeasy
       # Only ever read when the opt-in dev_overrides option is on AND the process
       # is non-production — see Engine#dev_overrides_active?.
       DEV_COOKIE_NAME = "se_ov_dev".freeze
+      # Request header carrying the same cookies (cookie-header syntax) for APIs
+      # on another origin/subdomain. Rack env key: HTTP_X_SHIPEASY_OVERRIDES.
+      HEADER_NAME = "X-Shipeasy-Overrides".freeze
+      HEADER_ENV_KEY = "HTTP_X_SHIPEASY_OVERRIDES".freeze
       FORMAT_VERSION = 1
 
       EMPTY = { "gates" => {}.freeze, "configs" => {}.freeze, "exps" => {}.freeze }.freeze
@@ -131,10 +135,11 @@ module Shipeasy
       def extract(input, name = COOKIE_NAME)
         return nil if input.nil? || !input.is_a?(String) || input.empty?
 
-        if !input.include?(";") && !input.include?("#{name}=")
-          # Bare value: a signed one has a ".", a dev one is dot-free base64url.
+        # A bare value contains neither "=" nor ";" (base64url has no padding).
+        # Anything else is a Cookie header, so an unrelated `theme=a.b` is never
+        # mistaken for a bare se_ov value.
+        unless input.include?("=") || input.include?(";")
           return nil if name == COOKIE_NAME && !input.include?(".")
-          return nil if name == DEV_COOKIE_NAME && input.include?("=")
 
           return input
         end

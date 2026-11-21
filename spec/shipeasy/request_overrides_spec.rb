@@ -81,6 +81,9 @@ RSpec.describe "request-scoped signed overrides" do
       expect(verifier.extract("se_ov=a%2Eb")).to eq("a.b")
       expect(verifier.extract("a=1; b=2")).to be_nil
       expect(verifier.extract("nodot")).to be_nil
+      # an unrelated single cookie is a header, not a bare value
+      expect(verifier.extract("theme=a.b")).to be_nil
+      expect(verifier.extract("theme=a.b", "se_ov_dev")).to be_nil
       expect(verifier.extract(nil)).to be_nil
       expect(verifier.extract("")).to be_nil
     end
@@ -314,6 +317,70 @@ RSpec.describe "request-scoped signed overrides" do
       Shipeasy.override_flag("lobby_hold", false)
       Shipeasy.with_request_overrides("se_ov=#{OV_COOKIE}; se_ov_dev=#{DEV_COOKIE}") do
         expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(false)
+      end
+    end
+  end
+
+  describe "X-Shipeasy-Overrides header fallback" do
+    let(:dev_value) { "eyJnYXRlcyI6eyJsb2JieV9ob2xkIjp0cnVlLCJvbGRfbmF2IjpmYWxzZX0sImNvbmZpZ3MiOnsiYmFubmVyIjp7InRleHQiOiJoaSJ9fSwiZXhwcyI6eyJjaGVja291dF9leHAiOiJ0cmVhdG1lbnQifX0" }
+
+    def setup_engine(dev)
+      Shipeasy.config.dev_overrides = dev
+      Shipeasy.configure_for_offline(snapshot: { "flags" => flags_blob, "experiments" => exps_blob })
+    end
+
+    it "applies a header-only signed cookie (scope helper and Rack)" do
+      setup_engine(false)
+      Shipeasy.with_request_overrides(nil, overrides_header: "se_ov=#{OV_COOKIE}") do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(true)
+      end
+      seen = nil
+      app = ->(_e) { seen = Shipeasy::Client.new(user).get_flag("lobby_hold"); [200, {}, []] }
+      Shipeasy::SDK::RackMiddleware.new(app).call("HTTP_X_SHIPEASY_OVERRIDES" => "se_ov=#{OV_COOKIE}")
+      expect(seen).to be(true)
+    end
+
+    it "falls back to the header when the Cookie header holds only an unrelated cookie" do
+      setup_engine(false)
+      Shipeasy.with_request_overrides("theme=a.b", overrides_header: "se_ov=#{OV_COOKIE}") do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(true)
+      end
+    end
+
+    it "rejects a tampered header-only signed cookie" do
+      setup_engine(false)
+      Shipeasy.with_request_overrides(nil, overrides_header: "se_ov=#{OV_TAMPERED}") do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(false)
+      end
+    end
+
+    it "applies a header-only dev cookie only under the guards" do
+      hdr = "se_ov_dev=#{dev_value}"
+      setup_engine(false)
+      Shipeasy.with_request_overrides(nil, overrides_header: hdr) do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(false)
+      end
+      setup_engine(true)
+      Shipeasy.with_request_overrides(nil, overrides_header: hdr) do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(true)
+      end
+    end
+
+    it "never parses the header's dev cookie when the guard is off" do
+      setup_engine(false)
+      expect(Shipeasy::SDK::OverrideCookie).not_to receive(:decode_dev)
+      Shipeasy.with_request_overrides(nil, overrides_header: "se_ov_dev=#{dev_value}") { :x }
+    end
+
+    it "lets the Cookie header beat the custom header for the same name" do
+      setup_engine(true)
+      cookie_dev = verifier.b64u_encode('{"gates":{"lobby_hold":false}}')
+      Shipeasy.with_request_overrides("se_ov_dev=#{cookie_dev}", overrides_header: "se_ov_dev=#{dev_value}") do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(false)
+      end
+      # different names: each source fills what the other lacks
+      Shipeasy.with_request_overrides("se_ov_dev=#{cookie_dev}", overrides_header: "se_ov=#{OV_COOKIE}") do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(true) # signed beats dev
       end
     end
   end
