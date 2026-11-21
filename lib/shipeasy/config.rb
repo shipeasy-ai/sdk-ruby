@@ -55,6 +55,11 @@ module Shipeasy
                   :private_attributes, :sticky_store,
                   :disable_internal_error_reporting, :clean_backtrace
 
+    # Opt-in (default false), dev only: also honour the unsigned `se_ov_dev`
+    # cookie so `?se_gate_x=true` URL params reach server reads without DevTools
+    # sign-in. Ignored (with one warning) in a production process.
+    attr_accessor :dev_overrides
+
     # SDK-wide diagnostic verbosity for the leveled logger (Shipeasy::Logging).
     # One of :silent, :error, :warn (default), :info, :debug (strings accepted
     # and downcased; unknown falls back to :warn). Controls the stderr output of
@@ -115,6 +120,7 @@ module Shipeasy
       @disable_telemetry    = nil
       @disable_internal_error_reporting = false
       @clean_backtrace      = true
+      @dev_overrides        = false
       @telemetry_url        = nil
       @private_attributes   = nil
       @sticky_store         = nil
@@ -211,6 +217,7 @@ module Shipeasy
         log_level:          cfg.log_level,
         disable_internal_error_reporting: cfg.disable_internal_error_reporting,
         clean_backtrace:    cfg.clean_backtrace,
+        dev_overrides:      cfg.dev_overrides,
       )
       @engine = engine
       # Capture +engine+ in the closure (not the @engine ivar, which a concurrent
@@ -385,6 +392,7 @@ module Shipeasy
     # can reconfigure between cases). Returns the engine.
     def install_global_engine(engine, attributes)
       config.attributes = attributes
+      engine.dev_overrides = config.dev_overrides
       @engine = engine
       @engine_pid = Process.pid
       engine

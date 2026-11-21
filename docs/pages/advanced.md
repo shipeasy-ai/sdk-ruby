@@ -125,6 +125,27 @@ it has not expired; anything else is ignored and reads evaluate normally. A bare
 `?se_gate_` URL parameter with no signed-in DevTools session never reaches the
 server — it stays client-only by design.
 
+### Local dev: `?se_gate_x=true` without signing in
+
+On a dev machine you can skip DevTools sign-in. The browser SDK mirrors the
+page's `?se_gate_` / `se_ks_` / `se_config_` / `se_exp_` URL params into an
+**unsigned** `se_ov_dev` cookie (non-production browser builds only), and the
+server reads it when you opt in:
+
+```ruby
+Shipeasy.configure do |c|
+  c.dev_overrides = true   # default false
+end
+```
+
+Two guards, both required: the option is on **and** the process is non-production
+(`SHIPEASY_ENV`, then `RAILS_ENV` / `RACK_ENV` / `APP_ENV`; unset means production;
+`configure_for_testing` counts as non-production). In a production process the
+option is ignored with one warning, and the middleware / scope helper never looks
+at the cookie, so it is never active in production. Precedence per name:
+programmatic override, then signed `se_ov`, then `se_ov_dev`, then normal
+evaluation; the reason stays `OVERRIDE`.
+
 ## Change listeners
 
 `Shipeasy.on_change` registers a callback fired after a background poll fetches

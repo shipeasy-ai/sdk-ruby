@@ -19,6 +19,10 @@ module Shipeasy
     # closed). Every failure returns nil; nothing here raises to the caller.
     module OverrideCookie
       COOKIE_NAME    = "se_ov".freeze
+      # Unsigned, dev-only sibling cookie (base64url JSON, no signature/expiry).
+      # Only ever read when the opt-in dev_overrides option is on AND the process
+      # is non-production — see Engine#dev_overrides_active?.
+      DEV_COOKIE_NAME = "se_ov_dev".freeze
       FORMAT_VERSION = 1
 
       EMPTY = { "gates" => {}.freeze, "configs" => {}.freeze, "exps" => {}.freeze }.freeze
@@ -83,14 +87,38 @@ module Shipeasy
         expected    = hmac(session_key, body)
         return nil unless secure_equal?(expected, b64u_decode(sig))
 
-        ov = payload["ov"]
+        normalize(payload["ov"])
+      rescue StandardError
+        nil
+      end
+
+      def normalize(ov)
         {
           "gates"   => hash_or_empty(ov["gates"]).select { |_k, v| v == true || v == false },
           "configs" => hash_or_empty(ov["configs"]),
           "exps"    => hash_or_empty(ov["exps"]).select { |_k, v| v.is_a?(String) },
         }.freeze
+      end
+
+      # Decode an UNSIGNED `se_ov_dev` value (base64url JSON of
+      # `{gates, configs, exps}`). nil on any malformation; never raises.
+      def decode_dev(value)
+        return nil unless value.is_a?(String) && !value.empty?
+
+        ov = JSON.parse(b64u_decode(value))
+        ov.is_a?(Hash) ? normalize(ov) : nil
       rescue StandardError
         nil
+      end
+
+      # Merge verified signed overrides over dev ones, per name (signed wins).
+      def merge(dev, signed)
+        return signed if dev.nil?
+        return dev if signed.nil?
+
+        %w[gates configs exps].each_with_object({}) do |k, h|
+          h[k] = dev[k].merge(signed[k])
+        end.freeze
       end
 
       def hash_or_empty(value)
@@ -100,17 +128,21 @@ module Shipeasy
       # Pull the raw `se_ov` value out of either a bare cookie value or a full
       # `Cookie:` header (`a=1; se_ov=...; b=2`). URL-decodes the value. nil when
       # absent.
-      def extract(input)
+      def extract(input, name = COOKIE_NAME)
         return nil if input.nil? || !input.is_a?(String) || input.empty?
 
-        if !input.include?(";") && !input.include?("#{COOKIE_NAME}=")
-          return input.include?(".") ? input : nil
+        if !input.include?(";") && !input.include?("#{name}=")
+          # Bare value: a signed one has a ".", a dev one is dot-free base64url.
+          return nil if name == COOKIE_NAME && !input.include?(".")
+          return nil if name == DEV_COOKIE_NAME && input.include?("=")
+
+          return input
         end
 
         input.split(";").each do |part|
           eq = part.index("=")
           next if eq.nil?
-          next unless part[0...eq].strip == COOKIE_NAME
+          next unless part[0...eq].strip == name
 
           return url_decode(part[(eq + 1)..].strip)
         end
