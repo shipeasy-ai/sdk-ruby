@@ -81,6 +81,9 @@ RSpec.describe "request-scoped signed overrides" do
       expect(verifier.extract("se_ov=a%2Eb")).to eq("a.b")
       expect(verifier.extract("a=1; b=2")).to be_nil
       expect(verifier.extract("nodot")).to be_nil
+      # an unrelated single cookie is a header, not a bare value
+      expect(verifier.extract("theme=a.b")).to be_nil
+      expect(verifier.extract("theme=a.b", "se_ov_dev")).to be_nil
       expect(verifier.extract(nil)).to be_nil
       expect(verifier.extract("")).to be_nil
     end
@@ -335,6 +338,13 @@ RSpec.describe "request-scoped signed overrides" do
       app = ->(_e) { seen = Shipeasy::Client.new(user).get_flag("lobby_hold"); [200, {}, []] }
       Shipeasy::SDK::RackMiddleware.new(app).call("HTTP_X_SHIPEASY_OVERRIDES" => "se_ov=#{OV_COOKIE}")
       expect(seen).to be(true)
+    end
+
+    it "falls back to the header when the Cookie header holds only an unrelated cookie" do
+      setup_engine(false)
+      Shipeasy.with_request_overrides("theme=a.b", overrides_header: "se_ov=#{OV_COOKIE}") do
+        expect(Shipeasy::Client.new(user).get_flag("lobby_hold")).to be(true)
+      end
     end
 
     it "rejects a tampered header-only signed cookie" do

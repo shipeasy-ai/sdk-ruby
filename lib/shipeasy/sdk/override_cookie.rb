@@ -135,10 +135,11 @@ module Shipeasy
       def extract(input, name = COOKIE_NAME)
         return nil if input.nil? || !input.is_a?(String) || input.empty?
 
-        if !input.include?(";") && !input.include?("#{name}=")
-          # Bare value: a signed one has a ".", a dev one is dot-free base64url.
+        # A bare value contains neither "=" nor ";" (base64url has no padding).
+        # Anything else is a Cookie header, so an unrelated `theme=a.b` is never
+        # mistaken for a bare se_ov value.
+        unless input.include?("=") || input.include?(";")
           return nil if name == COOKIE_NAME && !input.include?(".")
-          return nil if name == DEV_COOKIE_NAME && input.include?("=")
 
           return input
         end
